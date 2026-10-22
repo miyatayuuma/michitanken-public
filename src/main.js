@@ -11,6 +11,7 @@ import {validateManifest,createTiledWorld,registerTile,removeTile,tileAtPosition
 import {createTileStreamer} from './tile-stream.js';
 import {fitGlobalWaterProfiles,profilesInLocalSpace} from '../lib/tile-water.mjs';
 import {overviewPose} from '../lib/overview.mjs';
+import {pixelRatioBudget,tileDetail,geometryStats,OVERVIEW_ROAD_STEP,FULL_ROAD_STEP} from '../lib/render-policy.mjs';
 import './style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.querySelector('#details');
 let renderer,controls,scene,camera,frame=0;
@@ -72,14 +73,15 @@ function addTileBorder(field,parent,entry){
  parent.add(outline);
  return outline;
 }
-function addRoads(field,parent,layerSet){
+function addRoads(field,parent,layerSet,detail='full'){
  const group=new THREE.Group();group.name='roads';const batches={road:[],path:[],railway:[],bridge:[]};
+ const step=detail==='overview'?OVERVIEW_ROAD_STEP:FULL_ROAD_STEP;
  for(const road of field.osm.roads){
   const kind=road.bridge?'bridge':['footway','path','steps','pedestrian','cycleway'].includes(road.kind)?'path':'road';
-  for(let i=1;i<road.points.length;i++)batches[kind].push(...buildRoadRibbon(road.points[i-1],road.points[i],road.width,field,road.bridge ? .40 : .23));
+  for(let i=1;i<road.points.length;i++)batches[kind].push(...buildRoadRibbon(road.points[i-1],road.points[i],road.width,field,road.bridge ? .40 : .23,{alongStep:step,acrossStep:detail==='overview'?8:2.4}));
  }
  for(const railway of field.osm.railways||[])if(!railway.tunnel)for(let i=1;i<railway.points.length;i++)
-  batches.railway.push(...buildRoadRibbon(railway.points[i-1],railway.points[i],railway.width||2.5,field,railway.bridge?2.8:.31));
+  batches.railway.push(...buildRoadRibbon(railway.points[i-1],railway.points[i],railway.width||2.5,field,railway.bridge?2.8:.31,{alongStep:step,acrossStep:detail==='overview'?8:2.4}));
  for(const [type,verts] of Object.entries(batches)){
   if(!verts.length)continue;
   const colors={road:0xded8c5,path:0xedbb7a,railway:0x5e6b6e,bridge:0xeab878};
@@ -88,12 +90,21 @@ function addRoads(field,parent,layerSet){
  }
  parent.add(group);layerSet.roads=group;
 }
-function addBuildings(field,parent,layerSet){
+function addBuildings(field,parent,layerSet,detail='full'){
  const group=new THREE.Group();group.name='buildings';
  const walls=[],roofs=[];
  for(const b of field.osm.buildings){
   const p=b.footprint;if(p.length<3)continue;
   const base=p.reduce((sum,[x,z])=>sum+localY(field,x,z),0)/p.length,bottom=base+.15,top=base+b.height;
+  if(detail==='overview'){
+   // Tiny distant buildings need roofs, not hundreds of unseen wall triangles.
+   const xs=p.map(v=>v[0]),zs=p.map(v=>v[1]);
+   const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
+   if(maxX-minX<.05||maxZ-minZ<.05)continue;
+   roofs.push(minX,top,minZ,maxX,top,minZ,minX,top,maxZ,
+     maxX,top,minZ,maxX,top,maxZ,minX,top,maxZ);
+   continue;
+  }
   const shape=new THREE.Shape();shape.moveTo(p[0][0],-p[0][1]);for(let i=1;i<p.length;i++)shape.lineTo(p[i][0],-p[i][1]);shape.closePath();
   const roof=new THREE.ShapeGeometry(shape);roof.rotateX(-Math.PI/2);roof.translate(0,top,0);
   const nongrid=roof.index?roof.toNonIndexed():roof;
@@ -122,10 +133,15 @@ function makeAvatar(){
 }
 async function init(north,manifest){
  validateManifest(manifest);
+ container.dataset.appReady='false';
  scene=new THREE.Scene();scene.background=new THREE.Color(0xb7d7d9);scene.fog=new THREE.Fog(0xb7d7d9,500,1150);
  camera=new THREE.PerspectiveCamera(55,1,.1,11000);
  renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
- renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));renderer.outputColorSpace=THREE.SRGBColorSpace;
+ const coarsePointer=window.matchMedia?.('(pointer: coarse)').matches||false;
+ const memoryGiB=Number.isFinite(navigator.deviceMemory)?navigator.deviceMemory:null;
+ renderer.setPixelRatio(pixelRatioBudget(devicePixelRatio||1,{coarse:coarsePointer,memoryGiB}));
+ container.dataset.renderPixelRatio=String(renderer.getPixelRatio());
+ renderer.outputColorSpace=THREE.SRGBColorSpace;
  container.appendChild(renderer.domElement);
  scene.add(new THREE.HemisphereLight(0xf5faff,0x83917b,2.1));
  const sun=new THREE.DirectionalLight(0xffffff,2);sun.position.set(-180,320,120);scene.add(sun);
@@ -134,18 +150,32 @@ async function init(north,manifest){
  const flatWater=new URLSearchParams(location.search).get('water')==='flat';
  let elapsed=0,streamer=null,playerState=null,mode='walk';
  const disposeObject=object=>{
+   const materials=new Set(),geometries=new Set();
    object.traverse(o=>{
-     if(o.geometry)o.geometry.dispose();
-     const materials=o.material?(Array.isArray(o.material)?o.material:[o.material]):[];
-     for(const material of materials)material.dispose();
+     if(o.geometry)geometries.add(o.geometry);
+     const mats=o.material?(Array.isArray(o.material)?o.material:[o.material]):[];
+     for(const mat of mats)materials.add(mat);
    });
+   for(const geometry of geometries)geometry.dispose();
+   for(const material of materials)material.dispose();
  };
+ const nextFrame=()=>new Promise(resolve=>requestAnimationFrame(resolve));
+ let lodQueue=Promise.resolve();
+ const detailFor=entry=>tileDetail({
+   mode,x:playerState?.x??0,z:playerState?.z??0,entry,size:manifest.size,
+   camera:mode==='map'?camera.position:null
+ });
  function updateLayerMetrics(){
    const mounted=[...visuals.values()];
+   const stats=geometryStats(mounted);
    container.dataset.loadedTiles=[...visuals.keys()].join(',');
    container.dataset.waterMaterial=flatWater?'flat':'procedural';
    container.dataset.waterMeshes=String(mounted.reduce((n,v)=>n+(v.water?.group.children.length||0),0));
-   container.dataset.waterTriangles=String(mounted.reduce((n,v)=>n+(v.water?.summary.triangles||0),0));
+   container.dataset.waterTriangles=String(stats.waterTriangles);
+   container.dataset.roadTriangles=String(stats.roadTriangles);
+   container.dataset.buildingTriangles=String(stats.buildingTriangles);
+   container.dataset.lodFull=String(stats.full);
+   container.dataset.lodOverview=String(stats.overview);
    container.dataset.waterRibbons=String(mounted.reduce((n,v)=>n+(v.water?.summary.ribbons||0),0));
    container.dataset.waterFlowPaths=String(mounted.reduce((n,v)=>n+(v.water?.summary.flowPaths||0),0));
    container.dataset.waterLimited=String(mounted.some(v=>v.water?.summary.limited));
@@ -153,20 +183,69 @@ async function init(north,manifest){
      let n=0;v.root.traverse(o=>{if(o.isMesh)n++;});return sum+n;
    },0));
  }
- function refreshWater(){
+ function currentWaterProfiles(){
+   if(!streamer)return [];
+   return fitGlobalWaterProfiles(streamer.getCached(),manifest);
+ }
+ function rebuildWater(visual,profiles=currentWaterProfiles()){
+   if(visual.removed)return;
+   const next=createWaterLayer(visual.field,{
+     flat:flatWater,detail:visual.level,sharedProfiles:profilesInLocalSpace(profiles,visual.entry)
+   });
+   next.uniforms.uTime.value=elapsed;
+   next.uniforms.uMotion.value=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches?0:1;
+   if(visual.water){visual.root.remove(visual.water.group);disposeObject(visual.water.group);}
+   visual.water=next;
+   visual.root.add(next.group);
+ }
+ /** Refit only rivers sharing an OSM way with an acquired or removed tile. */
+ function refreshWater(changed=null){
    if(!streamer)return;
-   const cached=streamer.getCached();
-   const profiles=fitGlobalWaterProfiles(cached,manifest);
+   const profiles=currentWaterProfiles();
+   const affected=changed?new Set((changed.field.osm.waterways||[]).map(w=>w.id)):null;
    for(const visual of visuals.values()){
-     if(visual.water){visual.root.remove(visual.water.group);disposeObject(visual.water.group);}
-     visual.water=createWaterLayer(visual.field,{
-       flat:flatWater,sharedProfiles:profilesInLocalSpace(profiles,visual.entry)
-     });
-     visual.water.uniforms.uTime.value=elapsed;
-     visual.water.uniforms.uMotion.value=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches?0:1;
-     visual.root.add(visual.water.group);
+     if(changed&&visual.entry.id!==changed.entry.id&&
+       !visual.field.osm.waterways.some(w=>affected.has(w.id)))continue;
+     rebuildWater(visual,profiles);
    }
    updateLayerMetrics();
+ }
+ function syncRoadDepth(layers){
+   for(const road of layers.roads.children){
+     road.material.depthTest=mode!=='map';
+     road.material.depthWrite=mode!=='map';
+     road.material.needsUpdate=true;
+   }
+ }
+ function scheduleDetail(visual,detail){
+   if(visual.removed||visual.requestedLevel===detail)return;
+   visual.requestedLevel=detail;
+   if(visual.lodQueued)return;
+   visual.lodQueued=true;
+   lodQueue=lodQueue.then(async()=>{
+     while(!visual.removed&&visual.level!==visual.requestedLevel){
+       const target=visual.requestedLevel;
+       const temp=new THREE.Group(),next={};
+       addRoads(visual.field,temp,next,target);
+       await nextFrame();
+       if(visual.removed){disposeObject(temp);break;}
+       addBuildings(visual.field,temp,next,target);
+       await nextFrame();
+       if(visual.removed||visual.requestedLevel!==target){
+         disposeObject(temp);continue;
+       }
+       visual.root.remove(visual.layers.roads,visual.layers.buildings);
+       disposeObject(visual.layers.roads);disposeObject(visual.layers.buildings);
+       visual.layers.roads=next.roads;visual.layers.buildings=next.buildings;
+       visual.root.add(next.roads,next.buildings);
+       visual.level=target;
+       next.roads.visible=layerVisibility.roads;
+       next.buildings.visible=layerVisibility.buildings;
+       syncRoadDepth(visual.layers);
+       rebuildWater(visual);
+       updateLayerMetrics();
+     }
+   }).catch(error=>console.error('LOD replacement failed',error)).finally(()=>{visual.lodQueued=false;});
  }
  function reportStreaming(snapshot){
    container.dataset.pendingTiles=snapshot.pending.join(',');
@@ -177,36 +256,53 @@ async function init(north,manifest){
    const visible=visuals.size;
    const bounds=world.bounds;
    const label=(bounds.maxX-bounds.minX)+'m × '+(bounds.maxZ-bounds.minZ)+'m';
-   const prefix=mode==='map'?'全域 '+label+' · ':'実地理データを表示中 · ';
-   status.textContent=prefix+'読込 '+visible+'/'+manifest.tiles.length+' · '+current+progress+error;
+   const prefix=mode==='map'?'全域 '+label+' · ':'架空のデモ地形を表示中 · ';
+   status.textContent=container.dataset.appReady==='false'
+     ?'3Dフィールドを準備中 · 読込 '+visible+'/'+manifest.tiles.length
+     :prefix+'読込 '+visible+'/'+manifest.tiles.length+' · '+current+progress+error;
    status.classList.toggle('failed',!!snapshot.errors.length);
  }
- function mount(entry,field){
-   registerTile(world,entry,field);
+ async function mount(entry,field){
+   // Stagger terrain, roads, buildings and water uploads over separate RAFs.
+   // This avoids one giant 9-tile geometry construction task on first overview.
    const root=new THREE.Group();root.name='tile-'+entry.id;
-   root.position.set(entry.offset[0],field.terrain.min-world.baseElevation,entry.offset[1]);
-   const layers={};
-   addTerrain(field,root);addRoads(field,root,layers);addBuildings(field,root,layers);
+   const layers={},level=detailFor(entry);
+   addTerrain(field,root);
+   await nextFrame();
+   addRoads(field,root,layers,level);
+   await nextFrame();
+   addBuildings(field,root,layers,level);
+   await nextFrame();
    addCrossingMarkers(field,root,layers);
    layers.outline=addTileBorder(field,root,entry);
    layers.outline.visible=mode==='map';
-   for(const road of layers.roads.children){
-     road.material.depthTest=mode!=='map';
-     road.material.depthWrite=mode!=='map';
-   }
+   syncRoadDepth(layers);
    layers.roads.visible=layerVisibility.roads;
    layers.buildings.visible=layerVisibility.buildings;
+   registerTile(world,entry,field);
+   root.position.set(entry.offset[0],field.terrain.min-world.baseElevation,entry.offset[1]);
    scene.add(root);
-   const visual={entry,field,root,layers,water:null};
-   visuals.set(entry.id,visual);refreshWater();
+   const maxHeight=Math.max(40,...field.osm.buildings.map(b=>b.height));
+   const h=manifest.size/2;
+   const bounds=new THREE.Box3(
+     new THREE.Vector3(entry.offset[0]-h,field.terrain.min-world.baseElevation-3,entry.offset[1]-h),
+     new THREE.Vector3(entry.offset[0]+h,field.terrain.max-world.baseElevation+maxHeight+3,entry.offset[1]+h)
+   );
+   const visual={entry,field,root,layers,level,requestedLevel:level,bounds,
+     lodQueued:false,removed:false,water:null};
+   visuals.set(entry.id,visual);
+   refreshWater({entry,field});
    updateDetails();
+   // Mode can change while a tile is being created.
+   scheduleDetail(visual,detailFor(entry));
    return visual;
  }
  function unmount(entry,visual){
+   visual.removed=true;
    visuals.delete(entry.id);
    removeTile(world,entry.id);
    scene.remove(visual.root);disposeObject(visual.root);
-   refreshWater();
+   refreshWater({entry,field:visual.field});
    updateDetails();
  }
  function updateDetails(){
@@ -262,7 +358,7 @@ async function init(north,manifest){
    controls.target.lerp(target,factor);camera.lookAt(controls.target);
  }
  const mapTarget=new THREE.Vector3();
- let overviewSequence=0;
+ let overviewSequence=0,overviewAbort=null;
  container.dataset.overviewReady='false';
  function resetMap(){
    const focusRiver=new URLSearchParams(location.search).get('view')==='river';
@@ -302,13 +398,11 @@ async function init(north,manifest){
    // fog plane, the new southern tile becomes invisible behind fog.
    scene.fog.near=next==='map'?1500:500;
    scene.fog.far=next==='map'?11000:1150;
+   if(overviewAbort){overviewAbort.abort();overviewAbort=null;}
    for(const visual of visuals.values()){
      visual.layers.outline.visible=next==='map';
-     for(const road of visual.layers.roads.children){
-       road.material.depthTest=next!=='map';
-       road.material.depthWrite=next!=='map';
-       road.material.needsUpdate=true;
-     }
+     syncRoadDepth(visual.layers);
+     scheduleDetail(visual,detailFor(visual.entry));
    }
    document.querySelector('#app').dataset.mode=mode;
    modeButton.textContent=next==='walk'?'俯瞰':'歩く';
@@ -325,13 +419,14 @@ async function init(north,manifest){
      // A close-up river diagnostic needs only its local tile; do not
      // populate all nine GPU tiles during the textureless performance baseline.
      const singleRiverView=new URLSearchParams(location.search).get('view')==='river';
-     (singleRiverView?streamer.ensure('north'):streamer.ensureAll({concurrency:2})).then(()=>{
+     overviewAbort=new AbortController();
+     (singleRiverView?streamer.ensure('north'):streamer.ensureAll({concurrency:2,signal:overviewAbort.signal})).then(()=>{
        if(mode!=='map'||sequence!==overviewSequence)return;
        resetMap();
        container.dataset.overviewReady=singleRiverView?'diagnostic':'true';
        reportStreaming(streamer.snapshot());
      }).catch(error=>{
-       if(mode!=='map'||sequence!==overviewSequence)return;
+       if(mode!=='map'||sequence!==overviewSequence||error.name==='AbortError')return;
        console.error('Unable to load complete overview:',error);
        status.classList.add('failed');
        status.textContent='全域の読み込みに失敗しました: '+error.message;
@@ -339,7 +434,9 @@ async function init(north,manifest){
    }else{
      container.dataset.overviewReady='false';
      followCamera(0,true);
+     streamer.update(playerState.x,playerState.z);
    }
+   reportStreaming(streamer.snapshot());
  }
  document.querySelector('#reset').onclick=async()=>{
    if(mode==='map'){resetMap();return;}
@@ -366,8 +463,35 @@ async function init(north,manifest){
    if(mode==='map')resetMap();
  };
  const observer=new ResizeObserver(resize);observer.observe(container);resize();
+ const frustum=new THREE.Frustum(),projectionView=new THREE.Matrix4();
+ function updateVisibleTiles(){
+   camera.updateMatrixWorld();
+   projectionView.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
+   frustum.setFromProjectionMatrix(projectionView);
+   let visible=0;
+   for(const visual of visuals.values()){
+     // Exact tile width/height AABB: bounding spheres overestimated visibility
+     // and kept all nine meshes alive in a close-up mobile view.
+     visual.root.visible=frustum.intersectsBox(visual.bounds);
+     if(visual.root.visible)visible++;
+   }
+   container.dataset.frustumVisibleTiles=String(visible);
+ }
  const fixedStep=1/60,clock=new THREE.Clock();
- let accumulator=0,hudTime=0,streamTime=0;
+ let accumulator=0,hudTime=0,streamTime=0,qualityTime=0,metricTime=0;
+ let frameIndex=0;
+ const frameDurations=[];
+ const longTaskState={count:0,max:0};
+ let longTaskObserver=null;
+ if(typeof PerformanceObserver!=='undefined'&&PerformanceObserver.supportedEntryTypes?.includes('longtask')){
+   longTaskObserver=new PerformanceObserver(list=>{
+     for(const entry of list.getEntries()){
+       longTaskState.count++;
+       longTaskState.max=Math.max(longTaskState.max,entry.duration);
+     }
+   });
+   longTaskObserver.observe({type:'longtask',buffered:false});
+ }
  resetWalk();changeMode('walk');
  if(new URLSearchParams(location.search).has('test')){
    window.__michiDebug={
@@ -378,6 +502,16 @@ async function init(north,manifest){
        cameraYaw=yaw;avatarPosition();followCamera(0,true);updateHud();streamer.update(x,z);return true;
      },
      state:()=>({...playerState,tiles:streamer.snapshot()}),
+     renderStats:()=>({
+       ...geometryStats(visuals.values()),
+       pixelRatio:renderer.getPixelRatio(),
+       memory:{...renderer.info.memory},
+       render:{...renderer.info.render},
+       frameP95Ms:Number(container.dataset.frameP95Ms||0),
+       longTaskCount:longTaskState.count,
+       visibleTiles:Number(container.dataset.frustumVisibleTiles||0),
+       levels:[...visuals.values()].map(v=>({id:v.entry.id,level:v.level,visible:v.root.visible}))
+     }),
      worldCollision:(x,z)=>collisionReason(world,x,z),
      overviewProjection:()=>{
        const pose=overviewPose(manifest,container.clientWidth/Math.max(1,container.clientHeight),camera.fov);
@@ -419,7 +553,7 @@ async function init(north,manifest){
  }
  function draw(){
    frame=requestAnimationFrame(draw);
-   const dt=Math.min(clock.getDelta(),.16);
+   const rawDt=clock.getDelta(),dt=Math.min(rawDt,.16);
    if(mode==='walk'){
      accumulator+=dt;const intent=gameInput.getIntent();let n=0;
      while(accumulator>=fixedStep&&n<10){
@@ -433,17 +567,38 @@ async function init(north,manifest){
      const target=mode==='walk'?{x:playerState.x,z:playerState.z}:{x:mapTarget.x,z:mapTarget.z};
      streamer.update(target.x,target.z,{retainAll:mode==='map'&&new URLSearchParams(location.search).get('view')!=='river'});streamTime=0;
    }
+   qualityTime+=dt;
+   if(qualityTime>.28){
+     for(const visual of visuals.values())scheduleDetail(visual,detailFor(visual.entry));
+     updateVisibleTiles();
+     qualityTime=0;
+   }
    elapsed+=dt;
    for(const visual of visuals.values())if(visual.water)visual.water.uniforms.uTime.value=elapsed;
    renderer.render(scene,camera);
-   if((frame%60)===0){
+   frameIndex++;
+   frameDurations.push(rawDt*1000);
+   if(frameDurations.length>90)frameDurations.shift();
+   metricTime+=dt;
+   if(metricTime>.8){
      container.dataset.gpuGeometries=String(renderer.info.memory.geometries);
      container.dataset.gpuTextures=String(renderer.info.memory.textures);
+     container.dataset.renderCalls=String(renderer.info.render.calls);
+     container.dataset.renderTriangles=String(renderer.info.render.triangles);
+     container.dataset.longTaskCount=String(longTaskState.count);
+     container.dataset.maxLongTaskMs=String(Math.round(longTaskState.max));
+     const sorted=[...frameDurations].sort((a,b)=>a-b);
+     container.dataset.frameP50Ms=String(Math.round(sorted[Math.floor(sorted.length*.5)]||0));
+     container.dataset.frameP95Ms=String(Math.round(sorted[Math.floor(sorted.length*.95)]||0));
+     metricTime=0;
    }
  }
+ container.dataset.appReady='true';
+ reportStreaming(streamer.snapshot());
  draw();
  window.addEventListener('pagehide',()=>{
    cancelAnimationFrame(frame);observer.disconnect();gameInput.destroy();controls.dispose();
+   overviewAbort?.abort();longTaskObserver?.disconnect();
    void streamer.dispose();
    avatar.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
    renderer.dispose();
@@ -458,7 +613,7 @@ async function main(){
     fetch(`${root}data/field.json`,{cache:'no-store'})
   ]);
   if(!manifestResponse.ok)throw Error(`tiles.json がありません (HTTP ${manifestResponse.status})`);
-  if(!fieldResponse.ok)throw Error(`北側地理データがありません (HTTP ${fieldResponse.status})`);
+  if(!fieldResponse.ok)throw Error(`デモ地形データがありません (HTTP ${fieldResponse.status})`);
   const [manifest,field]=await Promise.all([manifestResponse.json(),fieldResponse.json()]);
   validateField(field);validateManifest(manifest);
   await init(field,manifest);
