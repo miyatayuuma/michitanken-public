@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "size": 500,
+  "center": {
+    "lat": 0,
+    "lon": 0
+  },
+  "tiles": [
+    {
+      "id": "north",
+      "offset": [
+        0,
+        0
+      ],
+      "url": "data/field.json"
+    },
+    {
+      "id": "south",
+      "offset": [
+        0,
+        500
+      ],
+      "url": "data/tiles/south.json"
+    },
+    {
+      "id": "northwest",
+      "offset": [
+        -500,
+        -500
+      ],
+      "url": "data/tiles/northwest.json"
+    },
+    {
+      "id": "far-north",
+      "offset": [
+        0,
+        -500
+      ],
+      "url": "data/tiles/far-north.json"
+    },
+    {
+      "id": "northeast",
+      "offset": [
+        500,
+        -500
+      ],
+      "url": "data/tiles/northeast.json"
+    },
+    {
+      "id": "west",
+      "offset": [
+        -500,
+        0
+      ],
+      "url": "data/tiles/west.json"
+    },
+    {
+      "id": "east",
+      "offset": [
+        500,
+        0
+      ],
+      "url": "data/tiles/east.json"
+    },
+    {
+      "id": "southwest",
+      "offset": [
+        -500,
+        500
+      ],
+      "url": "data/tiles/southwest.json"
+    },
+    {
+      "id": "southeast",
+      "offset": [
+        500,
+        500
+      ],
+      "url": "data/tiles/southeast.json"
+    }
+  ]
+}

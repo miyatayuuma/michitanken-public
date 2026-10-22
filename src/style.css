@@ -1,0 +1,43 @@
+:root{font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;color:#e7f3ee;background:#142c2c}
+*{box-sizing:border-box}
+body{margin:0}
+#app{display:flex;flex-direction:column;height:100dvh;min-height:370px;overflow:hidden}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 15px;background:#142c2c;z-index:2}
+.brand{display:flex;flex-direction:column;gap:3px;min-width:0}
+.brand strong{font-size:19px;letter-spacing:.08em}
+.brand span{font-size:11px;color:#b1cdc5}
+.buttons{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+button{font:inherit;cursor:pointer;padding:8px 12px;border-radius:8px;border:1px solid #68867f;background:#1b3a35;color:#deefea;user-select:none;-webkit-user-select:none}
+button.selected{background:#c8e3d3;color:#172c2a;border-color:transparent}
+button:focus-visible{outline:3px solid #e9ba68;outline-offset:2px}
+main{position:relative;flex:1;overflow:hidden;min-height:0}
+#scene{width:100%;height:100%;touch-action:none}
+#status,#details,#player-coords{position:absolute;padding:8px 11px;background:#173130e8;color:#e9f6ee;border-radius:8px;max-width:min(80vw,500px);font-size:12px;pointer-events:none}
+#status{top:13px;left:13px}
+#status.failed{background:#752f2f}
+#details{left:13px;bottom:14px}
+#app[data-mode="walk"] #details{display:none}
+#player-coords{top:58px;left:13px;display:none;font-variant-numeric:tabular-nums}
+#app[data-mode="walk"] #player-coords:not(:empty){display:block}
+.compass{position:absolute;top:15px;right:16px;background:#173130e8;border-radius:12px;padding:9px;font-weight:700;pointer-events:none}
+.game-control{display:none}
+#joystick{position:absolute;bottom:max(22px,env(safe-area-inset-bottom));left:16px;width:138px;height:138px;touch-action:none;border:3px solid #dceae5b8;border-radius:50%;background:#132f2d77;box-shadow:0 2px 9px #0004}
+#joystick-knob{position:absolute;top:50%;left:50%;width:58px;height:58px;margin:-29px;border-radius:50%;background:#d7e9deeb;border:3px solid #fff;box-shadow:0 1px 6px #0004;pointer-events:none}
+#run{position:absolute;right:20px;bottom:max(43px,env(safe-area-inset-bottom));width:77px;height:77px;border-radius:50%;touch-action:none;border:2px solid #dceae5;box-shadow:0 2px 10px #0004;font-size:16px;font-weight:700}
+#run.holding{background:#f3c278;color:#152c28;transform:scale(.96)}
+@media(pointer:coarse){#app[data-mode="walk"] .game-control{display:block}}
+footer{background:#142c2c;display:flex;justify-content:space-between;gap:10px;padding:8px 14px;font-size:10px;color:#a8c7bc;flex-wrap:wrap;z-index:2}
+@media(max-width:650px){
+ .toolbar{padding:9px 9px;align-items:center}
+ .brand strong{font-size:16px}
+ .brand span{font-size:10px}
+ .buttons{gap:5px}
+ button{padding:7px 8px;font-size:12px}
+ #status,#details,#player-coords{font-size:11px}
+ #status{left:9px;top:9px}
+ #details{left:9px;bottom:9px}
+ #app[data-mode="walk"] #details{display:none}
+ #player-coords{top:53px;left:9px}
+ footer{padding:6px 9px;font-size:9px}
+}
+@media(max-height:530px){#joystick{width:100px;height:100px}#run{width:63px;height:63px}}
