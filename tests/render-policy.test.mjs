@@ -40,8 +40,12 @@ test('overview road tessellation reduces vertices but preserves source endpoints
  }
  assert.ok(overviewTriangles<fullTriangles*.52,`Road LOD improvement insufficient: ${overviewTriangles}/${fullTriangles}`);
 });
-test('overview river uses fewer tessellated triangles and preserves all named rivers',()=>{
- for(const field of [north,south]){
+test('overview river lowers tessellation for a synthetic stream without losing geometry',()=>{
+ for(const base of [north,south]){
+  // Public fixtures contain no real waterways. Generate fictional geometry in memory.
+  const field={...base,osm:{...base.osm,waterAreas:[],waterways:[
+   {id:'fictional-stream',kind:'stream',points:[[-125,-60],[125,-60]],width:6,layer:0,tunnel:false}
+  ]}};
   const full=createWaterLayer(field,{detail:'full'});
   const low=createWaterLayer(field,{detail:'overview'});
   assert.equal(low.summary.areas,full.summary.areas);
