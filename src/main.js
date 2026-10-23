@@ -582,6 +582,13 @@ async function init(north,manifest){
          })||[]
        }))
      }),
+     panOverview:(x,z)=>{
+       if(mode!=='map'||!wideMap)return false;
+       const dx=x-controls.target.x,dz=z-controls.target.z;
+       controls.target.x+=dx;controls.target.z+=dz;
+       camera.position.x+=dx;camera.position.z+=dz;
+       controls.update();return true;
+     },
      tick:()=>streamer.update(playerState.x,playerState.z)
    };
  }
