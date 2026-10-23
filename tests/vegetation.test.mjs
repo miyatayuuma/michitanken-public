@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {sampleVegetation} from '../src/vegetation.js';
+import {sampleVegetation,natureInstanceBudget} from '../src/vegetation.js';
 
 const entry={id:'fictional-woods',offset:[500,0]};
 const field={size:500,osm:{
@@ -26,9 +26,14 @@ test('Task6 mapped low-poly nature is stable across re-entry and bounded per til
  const b=sampleVegetation(entry,field,overlay);
  assert.ok(a.length>10,'The mapped wood must produce visible natural objects');
  assert.deepEqual(a,b);
- assert.ok(a.length<=260);
- assert.ok(a.filter(x=>x.kind==='tree').length<=80);
- assert.ok(a.filter(x=>x.kind==='grass').length<=115);
+ assert.ok(a.length<=540);
+ assert.ok(a.filter(x=>x.kind==='tree').length<=100);
+ assert.ok(a.filter(x=>x.kind==='grass').length<=310);
+ assert.ok(a.filter(x=>x.kind==='bush').length<=180);
+ assert.ok(a.length>=340,'Dense woodland should have a visible understory');
+ // A deterministic hash rank must fill the entire woodland, not its first corner.
+ for(const x of [-1,1])for(const z of [-1,1])
+  assert.ok(a.some(p=>p.x*x>60&&p.z*z>60),'Missing forest quadrant '+x+':'+z);
  assert.ok(a.every(x=>['tree_oak','tree_default','tree_pineDefaultA','plant_bush','grass','flower_yellowA','rock_smallA'].includes(x.model)));
  assert.ok(a.every(x=>Math.abs(x.x)<250&&Math.abs(x.z)<250&&Number.isFinite(x.height)&&x.height>0));
 });
@@ -50,4 +55,16 @@ test('Task6 atlas path still has source-ground vegetation areas without model de
  const source=fs.readFileSync(new URL('../src/wide-overview.js',import.meta.url),'utf8');
  assert.ok(source.includes('if(vegetation?.schema===1'));
  assert.ok(source.indexOf('for(const area of vegetation.areas')<source.indexOf('for(const water of field.osm?.waterAreas'));
+});
+
+test('Task6 vegetation caps on low-memory devices and remains deterministic',()=>{
+ assert.equal(natureInstanceBudget({coarsePointer:true,memoryGiB:4}),240);
+ assert.equal(natureInstanceBudget({coarsePointer:true,memoryGiB:8}),360);
+ assert.equal(natureInstanceBudget({coarsePointer:false,memoryGiB:4}),540);
+ const low=sampleVegetation(entry,field,overlay,{maxTotal:240});
+ const high=sampleVegetation(entry,field,overlay,{maxTotal:540});
+ assert.ok(low.length<=240);
+ assert.ok(high.length>low.length);
+ assert.deepEqual(low,sampleVegetation(entry,field,overlay,{maxTotal:240}));
+ assert.throws(()=>sampleVegetation(entry,field,overlay,{maxTotal:1000}),/budget/);
 });
