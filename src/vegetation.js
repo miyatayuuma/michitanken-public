@@ -37,13 +37,13 @@ function nearPath(x,z,points,clearance){
  for(let i=1;i<points.length;i++)if(distanceSegment(x,z,points[i-1],points[i])<clearance)return true;
  return false;
 }
-function occupied(x,z,field){
+function occupied(x,z,field,{observedCanopy=false}={}){
  const osm=field.osm||{};
  for(const house of osm.buildings||[]){
   if(inside(x,z,house.footprint)||nearPath(x,z,[...house.footprint,house.footprint[0]],3))return true;
  }
  for(const water of osm.waterAreas||[])if(inside(x,z,water.footprint)||nearPath(x,z,[...water.footprint,water.footprint[0]],3))return true;
- for(const road of osm.roads||[])if(nearPath(x,z,road.points,(road.width||3)/2+2.5))return true;
+ for(const road of osm.roads||[])if(nearPath(x,z,road.points,(road.width||3)/2+(observedCanopy?0:2.5)))return true;
  for(const rail of osm.railways||[])if(nearPath(x,z,rail.points,7))return true;
  for(const river of osm.waterways||[])if(nearPath(x,z,river.points,(river.width||3)/2+3))return true;
  return false;
@@ -66,9 +66,9 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=540}={}){
  if(!Number.isInteger(maxTotal)||maxTotal<0||maxTotal>900)throw Error('Invalid nature instance budget');
  const out=[],used={tree:0,bush:0,grass:0,flower:0,rock:0},candidates=[];
  // Keep explicit tagged trees ahead of vegetation inferred from land cover.
- const add=(kind,x,z,seed)=>{
+ const add=(kind,x,z,seed,observedCanopy=false)=>{
   if(!SPEC[kind]||used[kind]>=SPEC[kind].limit||out.length>=maxTotal||
-     Math.abs(x)>=field.size/2-.5||Math.abs(z)>=field.size/2-.5||occupied(x,z,field))return;
+     Math.abs(x)>=field.size/2-.5||Math.abs(z)>=field.size/2-.5||occupied(x,z,field,{observedCanopy}))return;
   const spacing=kind==='tree'?8:kind==='bush'?2.6:1.25;
   if(out.some(p=>p.kind===kind&&Math.hypot(p.x-x,p.z-z)<spacing))return;
   const shape=SPEC[kind];
@@ -79,7 +79,7 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=540}={}){
  };
  for(const tree of (overlay.trees||[]).slice(0,200)){
   if(!Array.isArray(tree)||tree.length!==2||!tree.every(Number.isFinite))continue;
-  add('tree',tree[0],tree[1],entry.id+':osm-tree:'+tree.join(':'));
+  add('tree',tree[0],tree[1],entry.id+':osm-tree:'+tree.join(':'),true);
  }
  if(out.length>=maxTotal)return out;
  const areas=[...overlay.areas].sort((a,b)=>hash(String(a.id)+':scatter')-hash(String(b.id)+':scatter')).slice(0,1500);
@@ -97,9 +97,9 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=540}={}){
   if(area.kind==='canopy'||area.kind==='shrub'){
    const x=ring.reduce((n,p)=>n+p[0],0)/ring.length;
    const z=ring.reduce((n,p)=>n+p[1],0)/ring.length;
-   if(inside(x,z,ring)){
+   if(inside(x,z,ring)&&!(area.holes||[]).some(h=>inside(x,z,h))){
     const kind=area.kind==='canopy'?'tree':'bush';
-    candidates.push({kind,x,z,seed:area.id+':crown',priority:-1});
+    candidates.push({kind,x,z,seed:area.id+':crown',priority:-1,observedCanopy:area.kind==='canopy'});
    }
   }
   // Two passes: preserve standing trees, then carpet their gaps with small plants.
@@ -122,7 +122,7 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=540}={}){
     if(hash(seed+':sample')>sampling||hash(seed+':density')>chance)continue;
     const x=gx*step-entry.offset[0]+(hash(seed+':dx')-.5)*step*.62;
     const z=gz*step-entry.offset[1]+(hash(seed+':dz')-.5)*step*.62;
-    if(!inside(x,z,ring))continue;
+    if(!inside(x,z,ring)||(area.holes||[]).some(h=>inside(x,z,h)))continue;
     let kind;
     if(layer==='understory'){
      const r=hash(seed+':kind');
@@ -135,7 +135,7 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=540}={}){
      if(layer==='canopy'&&kind==='grass')continue; // grass belongs in understory
     }
     if(!SPEC[kind])continue;
-    candidates.push({kind,x,z,seed,priority:hash(seed+':priority')});
+    candidates.push({kind,x,z,seed,priority:hash(seed+':priority'),observedCanopy:area.kind==='canopy'});
    }
   }
  }
@@ -143,7 +143,7 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=540}={}){
  candidates.sort((a,b)=>a.priority-b.priority||a.seed.localeCompare(b.seed));
  for(const item of candidates){
   if(out.length>=maxTotal)break;
-  add(item.kind,item.x,item.z,item.seed);
+  add(item.kind,item.x,item.z,item.seed,item.observedCanopy);
  }
  return out;
 }
