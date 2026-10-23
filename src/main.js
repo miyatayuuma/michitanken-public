@@ -160,6 +160,14 @@ async function init(north,manifest){
    const data=await response.json();
    if(data?.schema!==1||data.tileId!==entry.id||!Array.isArray(data.areas))
      throw Error('Invalid mapped vegetation overlay '+entry.id);
+   // PRIVATE Nagoya aerial-photo-derived green cover is more precise than
+   // generic OSM park/landuse boundaries. Preserve explicit OSM tree nodes.
+   const municipal=await fetch(`${import.meta.env.BASE_URL}data/green-cover/${entry.id}.json`);
+   if(municipal.ok&&municipal.headers.get('content-type')?.includes('json')){
+     const cover=await municipal.json();
+     if(cover.schema===1&&cover.tileId===entry.id&&Array.isArray(cover.areas)&&cover.areas.length)
+       return {...data,areas:cover.areas};
+   }
    return data;
  }
  const wideMap=wideOverviewNeeded(manifest);
