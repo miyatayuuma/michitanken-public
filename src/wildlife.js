@@ -45,7 +45,7 @@ export function wildlifeCandidates(entry,field,overlay){
  const areas=(overlay.areas||[]).filter(area=>['wood','grove','park','grass','shrub','scrub'].includes(area.kind)
     &&area.ring?.length>=3).sort((a,b)=>hash(String(a.id))-hash(String(b.id)));
  for(const a of areas){
-  if(result.filter(p=>p.species==='bee').length>=2)break;
+  if(result.filter(p=>p.species==='bee').length>=12)break;
   const xs=a.ring.map(p=>p[0]),zs=a.ring.map(p=>p[1]);
   const xmin=Math.max(-h,Math.min(...xs)),xmax=Math.min(h,Math.max(...xs));
   const zmin=Math.max(-h,Math.min(...zs)),zmax=Math.min(h,Math.max(...zs));
@@ -62,7 +62,7 @@ export function wildlifeCandidates(entry,field,overlay){
  const waterways=[...(field.osm?.waterways||[])].filter(w=>!w.tunnel&&w.layer>=0&&w.points?.length>=2)
   .sort((a,b)=>String(a.id).localeCompare(String(b.id)));
  for(const way of waterways){
-  if(result.some(p=>p.species==='duck'))break;
+  if(result.filter(p=>p.species==='duck').length>=3)break;
   for(let i=1;i<way.points.length;i++){
    const a=way.points[i-1],b=way.points[i],dx=b[0]-a[0],dz=b[1]-a[1];
    const length=Math.hypot(dx,dz);if(length<6)continue;
@@ -70,7 +70,8 @@ export function wildlifeCandidates(entry,field,overlay){
    const side=hash(seed)>0.5?1:-1,margin=(way.width||3)/2+4.5;
    const x=(a[0]+b[0])/2+side*-dz/length*margin;
    const z=(a[1]+b[1])/2+side*dx/length*margin;
-   if(!safePoint(x,z,field)||nearPath(x,z,way.points,(way.width||3)/2+2))continue;
+   if(!safePoint(x,z,field)||nearPath(x,z,way.points,(way.width||3)/2+2)||
+     result.some(p=>p.species==='duck'&&Math.hypot(p.x-x,p.z-z)<35))continue;
    result.push({id:seed,species:'duck',x,z,phase:hash(seed+'p')*Math.PI*2});
    break;
   }
