@@ -94,11 +94,13 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=540}={}){
     xmax=Math.floor((maxX+entry.offset[0])/step),
     zmin=Math.ceil((minZ+entry.offset[1])/step),
     zmax=Math.floor((maxZ+entry.offset[1])/step);
-   // Per-area candidate work bound protects unusual malformed/oversized OSM polygons.
-   let collected=0;
-   for(let gx=xmin;gx<=xmax&&collected<2600;gx++)for(let gz=zmin;gz<=zmax&&collected<2600;gz++){
+   // Randomly thin the *whole* grid when a polygon is very large. A row-major
+   // early stop would starve the east/south half of large forests.
+   const gridCount=(xmax-xmin+1)*(zmax-zmin+1);
+   const sampling=Math.min(1,2000/Math.max(1,gridCount));
+   for(let gx=xmin;gx<=xmax;gx++)for(let gz=zmin;gz<=zmax;gz++){
     const seed=area.id+':'+layer+':'+gx+':'+gz;
-    if(hash(seed+':density')>chance)continue;
+    if(hash(seed+':sample')>sampling||hash(seed+':density')>chance)continue;
     const x=gx*step-entry.offset[0]+(hash(seed+':dx')-.5)*step*.62;
     const z=gz*step-entry.offset[1]+(hash(seed+':dz')-.5)*step*.62;
     if(!inside(x,z,ring))continue;
@@ -115,7 +117,6 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=540}={}){
     }
     if(!SPEC[kind])continue;
     candidates.push({kind,x,z,seed,priority:hash(seed+':priority')});
-    collected++;
    }
   }
  }
