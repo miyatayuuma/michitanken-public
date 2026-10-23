@@ -7,6 +7,7 @@ on:
       - 'src/wide-overview.js'
       - 'src/player-sprite.js'
       - 'lib/sprite-animation.mjs'
+      - 'lib/avatar-ground.mjs'
       - 'scripts/browser-player-sprite.mjs'
       - 'scripts/browser-wide-overview.mjs'
       - '.github/workflows/wide-overview-browser.yml'

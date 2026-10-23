@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
+import fs from 'node:fs';
+import {renderedFootHeight} from '../lib/avatar-ground.mjs';
+const field=JSON.parse(fs.readFileSync(new URL('../public/data/field.json',import.meta.url),'utf8'));
 const origin=process.env.MICHI_TEST_ORIGIN||'http://127.0.0.1:8080';
 // Synthetic colored rectangles only: no private artwork or geographic fixtures.
 const config={schema:1,image:'assets/synthetic-player.svg',width:90,height:50,pixelsPerUnit:18,stride:2.8,
@@ -59,7 +62,9 @@ try{
   assert.ok(frames.size>=2,'actual walking must advance frames');
   const state=await page.evaluate(()=>window.__michiDebug.state()),avatar=await page.evaluate(()=>window.__michiDebug.avatar());
   assert.ok(Math.hypot(state.x-before.x,state.z-before.z)>.1);
-  assert.deepEqual(avatar.position,[state.x,state.y,state.z]);assert.equal(avatar.frame,0);
+  assert.equal(avatar.position[0],state.x);assert.equal(avatar.position[2],state.z);
+  assert.ok(Math.abs(avatar.position[1]-renderedFootHeight(field,state.x,state.z,field.terrain.min))<1e-8);
+  assert.equal(avatar.frame,0);
   assert.equal(avatar.depthTest,true);assert.equal(avatar.depthWrite,true);
   if(mobile){
    const box=await page.locator('#joystick').boundingBox();

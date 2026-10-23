@@ -17,6 +17,7 @@ import {pixelRatioBudget,tileDetail,geometryStats,OVERVIEW_ROAD_STEP,FULL_ROAD_S
 import {createVegetationRenderer,natureInstanceBudget} from './vegetation.js';
 import {createWildlifeRenderer} from './wildlife.js';
 import {loadPlayerSprite} from './player-sprite.js';
+import {renderedFootHeight} from '../lib/avatar-ground.mjs';
 import './style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.querySelector('#details');
 let renderer,controls,scene,camera,frame=0;
@@ -408,7 +409,21 @@ async function init(north,manifest){
      camera.position.set(...next.camera);
    }
  });
- const avatarPosition=()=>{avatar.position.set(playerState.x,playerState.y,playerState.z);if(!playerSprite)avatar.rotation.y=playerState.facing;};
+ let footCache=null;
+ const avatarPosition=()=>{
+   let y=playerState.y;
+   if(playerSprite){
+     const owner=tileAtPosition(manifest,playerState.x,playerState.z),tile=owner&&world.tileWorlds.get(owner.id);
+     if(tile){
+       if(!footCache||footCache.field!==tile.field||footCache.x!==playerState.x||footCache.z!==playerState.z)
+         footCache={field:tile.field,x:playerState.x,z:playerState.z,
+           y:renderedFootHeight(tile.field,playerState.x-owner.offset[0],playerState.z-owner.offset[1],world.baseElevation,{roadStep:FULL_ROAD_STEP})};
+       y=footCache.y;
+     }
+   }
+   avatar.position.set(playerState.x,y,playerState.z);
+   if(!playerSprite)avatar.rotation.y=playerState.facing;
+ };
  function followCamera(dt,snap=false){
    const target=new THREE.Vector3(playerState.x,playerState.y+1.45,playerState.z);
    const horiz=cameraDistance*Math.cos(cameraPitch);
