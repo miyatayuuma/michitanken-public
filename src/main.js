@@ -5,6 +5,7 @@ import {buildRoadRibbon} from '../lib/road-surface.mjs';
 import {validateField} from '../lib/field.mjs';
 import {createCollisionWorld,chooseSpawn,advancePlayer,terrainHeight,blocked,collisionReason} from '../lib/navigation.mjs';
 import {createGameInput} from './controls.js';
+import {mapGamepadStep} from '../lib/gamepad.mjs';
 import {createWaterLayer} from './water.js';
 import {pointOnPath} from '../lib/water-field.mjs';
 import {validateManifest,createTiledWorld,registerTile,removeTile,tileAtPosition,distanceFromRect,PRELOAD_DISTANCE} from '../lib/tiles.mjs';
@@ -345,7 +346,18 @@ async function init(north,manifest){
    knob:document.querySelector('#joystick-knob'),runButton:document.querySelector('#run'),
    isActive:()=>mode==='walk',
    onLook(dx,dy){cameraYaw+=dx;cameraPitch=Math.min(1.1,Math.max(.2,cameraPitch+dy));},
-   onZoom(ratio){cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));}
+   onZoom(ratio){cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));},
+   onModeToggle(){changeMode(mode==='walk'?'map':'walk');},
+   onMapControl(input,dt){
+     if(mode!=='map'||!dt||!Object.values(input).some(Boolean))return;
+     const next=mapGamepadStep({
+       camera:camera.position.toArray(),target:controls.target.toArray(),
+       ...input,dt,minDistance:controls.minDistance,
+       maxDistance:controls.maxDistance,maxPolarAngle:controls.maxPolarAngle
+     });
+     controls.target.set(...next.target);
+     camera.position.set(...next.camera);
+   }
  });
  const avatarPosition=()=>{avatar.position.set(playerState.x,playerState.y,playerState.z);avatar.rotation.y=playerState.facing;};
  function followCamera(dt,snap=false){
@@ -595,6 +607,7 @@ async function init(north,manifest){
  function draw(){
    frame=requestAnimationFrame(draw);
    const rawDt=clock.getDelta(),dt=Math.min(rawDt,.16);
+   gameInput.pollGamepad(dt,mode);
    if(mode==='walk'){
      accumulator+=dt;const intent=gameInput.getIntent();let n=0;
      while(accumulator>=fixedStep&&n<10){

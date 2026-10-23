@@ -1,3 +1,6 @@
+import {radialStick} from '../lib/gamepad.mjs';
+
+const GAMEPAD_MESSAGE = 'dreamcore:gamepad-v2';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const keyFor=e=>e.key.toLowerCase();
 
@@ -5,13 +8,64 @@ const keyFor=e=>e.key.toLowerCase();
  * Return intention only; the deterministic movement system owns position and collision.
  * Mobile: left thumb for movement, drag on canvas for looking, right thumb to run.
  */
-export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,isActive=()=>true}){
+export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,onModeToggle=()=>{},onMapControl=()=>{},isActive=()=>true}){
   const abort=new AbortController(),{signal}=abort;
   const keys=new Set(),pressed=new Map();
   let joyId=null,runId=null,runHeld=false,joyX=0,joyY=0;
   const lookPointers=new Map();
   let pinchDistance=null;
   const listen=(target,type,handler,options={})=>target.addEventListener(type,handler,{...options,signal});
+  let padSignature='',padArmed=false,padButtons=[],padX=0,padY=0,padRun=false,padActive=false;
+  const cursorMode=()=> 'off',captureA=()=>true;
+  // The DreamCore parent still relays A, but must never generate a virtual click.
+  window.__dreamcoreGamepadCursorMode=cursorMode;
+  window.__dreamcoreGamepadCaptureA=captureA;
+  function resetGamepad(){
+    padSignature='';padArmed=false;padButtons=[];
+    padX=padY=0;padRun=padActive=false;
+  }
+  function getPad(){
+    if(!('getGamepads' in navigator))return null;
+    try{
+      return Array.from(navigator.getGamepads()||[]).find(p=>p?.connected&&p.mapping==='standard')||null;
+    }catch{return null;}
+  }
+  listen(window,'message',e=>{
+    if(window.parent===window||e.source!==window.parent||e.origin!==location.origin||
+      e.data?.type!==GAMEPAD_MESSAGE)return;
+    if(e.data.action==='release-all'){resetGamepad();return;}
+    if(e.data.action==='button'&&e.data.button===0&&e.data.phase==='down'&&padArmed){
+      onModeToggle();
+    }
+  });
+  function pollGamepad(dt,mode='walk'){
+    if(document.hidden){resetGamepad();return;}
+    const pad=getPad();
+    if(!pad){resetGamepad();return;}
+    const signature=pad.index+':'+pad.id+':'+pad.mapping;
+    if(signature!==padSignature){resetGamepad();padSignature=signature;}
+    const left=radialStick(pad.axes?.[0],pad.axes?.[1]);
+    const right=radialStick(pad.axes?.[2],pad.axes?.[3]);
+    const buttons=Array.from(pad.buttons||[],b=>!!(b?.pressed||b?.value>0.5));
+    if(!padArmed){
+      if(!buttons.some(Boolean)&&!left.x&&!left.y&&!right.x&&!right.y)padArmed=true;
+      padButtons=buttons;
+      return;
+    }
+    padX=left.x;padY=left.y;padActive=Math.hypot(padX,padY)>0;
+    padRun=!!buttons[7];
+    const seconds=clamp(Number.isFinite(dt)?dt:0,0,0.05);
+    if(mode==='walk'){
+      if(seconds&&(right.x||right.y))onLook(-right.x*1.8*seconds,-right.y*1.1*seconds);
+    }else if(mode==='map'){
+      onMapControl({moveX:left.x,moveY:left.y,lookX:right.x,lookY:right.y,
+        zoomOut:Number(!!buttons[6]),zoomIn:Number(!!buttons[7])},seconds);
+    }
+    // Standalone mode samples A locally; in DreamCore the parent owns edges.
+    if(window.parent===window&&buttons[0]&&!padButtons[0])onModeToggle();
+    padButtons=buttons;
+  }
+  listen(window,'gamepaddisconnected',resetGamepad);
   const movementKeys=new Set(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','shift']);
   listen(window,'keydown',e=>{
     const key=keyFor(e);
@@ -26,8 +80,8 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,is
     joyId=null;runId=null;runHeld=false;joyX=joyY=0;
     knob.style.transform='translate(0px, 0px)';runButton.classList.remove('holding');
   }
-  listen(window,'blur',resetInput);
-  listen(document,'visibilitychange',()=>{if(document.hidden)resetInput();});
+  listen(window,'blur',()=>{resetInput();resetGamepad();});
+  listen(document,'visibilitychange',()=>{if(document.hidden){resetInput();resetGamepad();}});
   const updateJoystick=e=>{
     const rect=joystick.getBoundingClientRect(),max=Math.max(1,(rect.width-knob.offsetWidth)/2);
     const centerX=rect.left+rect.width/2,centerY=rect.top+rect.height/2;
@@ -81,12 +135,19 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,is
     getIntent(){
       if(!isActive())return {forward:0,right:0,run:false};
       return {
-        forward:(keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+joyY,
-        right:(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+joyX,
-        run:keys.has('shift')||runHeld
+        forward:padActive?-padY:
+          (keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+joyY,
+        right:padActive?padX:
+          (keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+joyX,
+        run:keys.has('shift')||runHeld||padRun
       };
     },
+    pollGamepad,
     reset:resetInput,
-    destroy(){abort.abort();resetInput();}
+    destroy(){
+      abort.abort();resetInput();resetGamepad();
+      if(window.__dreamcoreGamepadCursorMode===cursorMode)delete window.__dreamcoreGamepadCursorMode;
+      if(window.__dreamcoreGamepadCaptureA===captureA)delete window.__dreamcoreGamepadCaptureA;
+    }
   };
 }
