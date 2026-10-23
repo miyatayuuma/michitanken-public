@@ -84,7 +84,9 @@ test('aborting nine tile overview stops remaining network fetches without corrup
 
 test('frustum visibility refreshes after camera movement on every render frame',()=>{
  const source=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
- const draw=source.slice(source.indexOf('  function draw(){'));
+ const start=source.indexOf(' function draw(){');
+ assert.ok(start>=0,'Draw loop must exist');
+ const draw=source.slice(start);
  const cameraMove=draw.indexOf('controls.update();');
  const qualityThrottle=draw.indexOf('if(qualityTime>.28){');
  const visibility=draw.indexOf('updateVisibleTiles();');
