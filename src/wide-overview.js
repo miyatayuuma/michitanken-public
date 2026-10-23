@@ -65,7 +65,7 @@ export function createWideOverview(manifest,baseElevation){
    ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke();
   }
  };
- function addTile(entry,field){
+ function addTile(entry,field,vegetation=null){
   if(seen.has(entry.id))throw Error('Duplicate wide atlas tile '+entry.id);
   if(!field?.terrain||field.size!==size)throw Error('Invalid wide atlas tile');
   seen.add(entry.id);
@@ -84,6 +84,14 @@ export function createWideOverview(manifest,baseElevation){
    const a=first+z*(cells+1)+x,b=a+1,c=a+cells+1,d=c+1;
    indices.push(a,c,b,b,c,d);
   }
+  // The existing fixed-size atlas acts as a ground-cover layer too:
+  // vegetation is painted before mapped blue water, without a fourth texture.
+  if(vegetation?.schema===1&&vegetation.tileId===entry.id)
+   for(const area of vegetation.areas||[]){
+    const colors={wood:'#487e54',grove:'#487e54',canopy:'#487e54',shrub:'#6c9060',scrub:'#6c9060',grass:'#8db777',park:'#77a66b'};
+    if(colors[area.kind]&&area.ring?.length>=3)
+     paintPath(sheets.water,entry,area.ring,{color:colors[area.kind],fill:true});
+   }
   for(const water of field.osm?.waterAreas||[])
    paintPath(sheets.water,entry,water.footprint,{color:'#4b9dc1',fill:true});
   for(const way of field.osm?.waterways||[]){

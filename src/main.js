@@ -13,6 +13,8 @@ import {fitGlobalWaterProfiles,profilesInLocalSpace} from '../lib/tile-water.mjs
 import {overviewPose} from '../lib/overview.mjs';
 import {createWideOverview,wideOverviewNeeded} from './wide-overview.js';
 import {pixelRatioBudget,tileDetail,geometryStats,OVERVIEW_ROAD_STEP,FULL_ROAD_STEP} from '../lib/render-policy.mjs';
+import {createVegetationRenderer,natureInstanceBudget} from './vegetation.js';
+import {createWildlifeRenderer} from './wildlife.js';
 import './style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.querySelector('#details');
 let renderer,controls,scene,camera,frame=0;
@@ -149,6 +151,30 @@ async function init(north,manifest){
  const world=createTiledWorld(manifest);
  const visuals=new Map(),layerVisibility={roads:true,buildings:true};
  const flatWater=new URLSearchParams(location.search).get('water')==='flat';
+ const natureEnabled=new URLSearchParams(location.search).get('nature')!=='off';
+ const wildlifeEnabled=natureEnabled&&new URLSearchParams(location.search).get('wildlife')!=='off';
+ const natureRenderer=createVegetationRenderer({baseURL:import.meta.env.BASE_URL});
+ const wildlife=wildlifeEnabled?createWildlifeRenderer({
+   scene,baseURL:import.meta.env.BASE_URL,baseElevation:north.terrain.min
+ }):null;
+ async function vegetationOverlay(entry){
+   if(!natureEnabled)return null;
+   const response=await fetch(`${import.meta.env.BASE_URL}data/vegetation/${entry.id}.json`);
+   if(response.status===404||!response.headers.get('content-type')?.includes('json'))return null;
+   if(!response.ok)throw Error('Vegetation overlay HTTP '+response.status);
+   const data=await response.json();
+   if(data?.schema!==1||data.tileId!==entry.id||!Array.isArray(data.areas))
+     throw Error('Invalid mapped vegetation overlay '+entry.id);
+   // PRIVATE Nagoya aerial-photo-derived green cover is more precise than
+   // generic OSM park/landuse boundaries. Preserve explicit OSM tree nodes.
+   const municipal=await fetch(`${import.meta.env.BASE_URL}data/green-cover/${entry.id}.json`);
+   if(municipal.ok&&municipal.headers.get('content-type')?.includes('json')){
+     const cover=await municipal.json();
+     if(cover.schema===1&&cover.tileId===entry.id&&Array.isArray(cover.areas)&&cover.areas.length)
+       return {...data,areas:cover.areas};
+   }
+   return data;
+ }
  const wideMap=wideOverviewNeeded(manifest);
  let wideLayer=null;
  let elapsed=0,streamer=null,playerState=null,mode='walk';
@@ -172,6 +198,9 @@ async function init(north,manifest){
    const mounted=[...visuals.values()];
    const stats=geometryStats(mounted);
    container.dataset.loadedTiles=[...visuals.keys()].join(',');
+   container.dataset.natureInstances=String(mounted.reduce((n,v)=>n+(v.nature?.userData.vegetationCount||0),0));
+   container.dataset.wildlifeCandidates=String(wildlife?.candidateCount||0);
+   container.dataset.wildlifeVisible=String(wildlife?.visibleCount||0);
    container.dataset.waterMaterial=flatWater?'flat':'procedural';
    container.dataset.waterMeshes=String(mounted.reduce((n,v)=>n+(v.water?.group.children.length||0),0));
    container.dataset.waterTriangles=String(stats.waterTriangles);
@@ -201,6 +230,7 @@ async function init(north,manifest){
    next.uniforms.uMotion.value=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches?0:1;
    if(visual.water){visual.root.remove(visual.water.group);disposeObject(visual.water.group);}
    visual.water=next;
+   wildlife?.setWaterProfiles(visual.entry.id,next.profiles);
    visual.root.add(next.group);
  }
  /** Refit only rivers sharing an OSM way with an acquired or removed tile. */
@@ -270,6 +300,20 @@ async function init(north,manifest){
      :prefix+progressLabel+' · '+current+progress+error;
    status.classList.toggle('failed',!!snapshot.errors.length);
  }
+ async function mountVegetation(visual){
+   if(!natureEnabled)return;
+   try{
+     const overlay=await vegetationOverlay(visual.entry);
+     if(visual.removed||!overlay)return;
+     wildlife?.register(visual.entry,visual.field,overlay);
+     const group=await natureRenderer.build(visual.entry,visual.field,overlay,{maxTotal:natureInstanceBudget({coarsePointer,memoryGiB})});
+     if(visual.removed){disposeObject(group);return;}
+     if(!group.userData.vegetationCount)return;
+     visual.nature=group;visual.root.add(group);updateLayerMetrics();
+   }catch(error){
+     if(!visual.removed)console.warn('Optional mapped vegetation unavailable:',visual.entry.id,error);
+   }
+ }
  async function mount(entry,field){
    // Stagger terrain, roads, buildings and water uploads over separate RAFs.
    // This avoids one giant 9-tile geometry construction task on first overview.
@@ -297,8 +341,9 @@ async function init(north,manifest){
      new THREE.Vector3(entry.offset[0]+h,field.terrain.max-world.baseElevation+maxHeight+3,entry.offset[1]+h)
    );
    const visual={entry,field,root,layers,level,requestedLevel:level,bounds,
-     lodQueued:false,removed:false,water:null};
+     lodQueued:false,removed:false,water:null,nature:null};
    visuals.set(entry.id,visual);
+   void mountVegetation(visual);
    refreshWater({entry,field});
    updateDetails();
    // Mode can change while a tile is being created.
@@ -307,6 +352,7 @@ async function init(north,manifest){
  }
  function unmount(entry,visual){
    visual.removed=true;
+   wildlife?.unregister(entry.id);
    visuals.delete(entry.id);
    removeTile(world,entry.id);
    scene.remove(visual.root);disposeObject(visual.root);
@@ -441,7 +487,11 @@ async function init(north,manifest){
        const builder=createWideOverview(manifest,world.baseElevation);
        await streamer.scanAll({concurrency:2,signal,onTile:async(entry,field)=>{
          if(signal.aborted)return;
-         builder.addTile(entry,field);
+         const foliage=await vegetationOverlay(entry).catch(error=>{
+           console.warn('Skipping optional map foliage:',entry.id,error);
+           return null;
+         });
+         builder.addTile(entry,field,foliage);
          await nextFrame();
        }});
        if(signal.aborted)return;
@@ -544,8 +594,12 @@ async function init(north,manifest){
        longTaskCount:longTaskState.count,
        visibleTiles:Number(container.dataset.frustumVisibleTiles||0),
        wideOverview:wideLayer?{tiles:wideLayer.loadedTiles,...wideLayer.budget}:null,
+       natureInstances:Number(container.dataset.natureInstances||0),
+       wildlifeVisible:wildlife?.visibleCount||0,
+       wildlifeCandidates:wildlife?.candidateCount||0,
        levels:[...visuals.values()].map(v=>({id:v.entry.id,level:v.level,visible:v.root.visible}))
      }),
+     wildlifeSpots:()=>wildlife?.candidatePositions||[],
      worldCollision:(x,z)=>collisionReason(world,x,z),
      overviewProjection:()=>{
        const pose=overviewPose(manifest,container.clientWidth/Math.max(1,container.clientHeight),camera.fov);
@@ -625,12 +679,15 @@ async function init(north,manifest){
    // Frustum visibility must track the camera after every walk or orbit update.
    // LOD geometry rebuilds remain throttled above.
    updateVisibleTiles();
+   wildlife?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
    renderer.render(scene,camera);
    frameIndex++;
    frameDurations.push(rawDt*1000);
    if(frameDurations.length>90)frameDurations.shift();
    metricTime+=dt;
    if(metricTime>.8){
+     container.dataset.wildlifeVisible=String(wildlife?.visibleCount||0);
+     container.dataset.wildlifeCandidates=String(wildlife?.candidateCount||0);
      container.dataset.gpuGeometries=String(renderer.info.memory.geometries);
      container.dataset.gpuTextures=String(renderer.info.memory.textures);
      container.dataset.renderCalls=String(renderer.info.render.calls);
@@ -650,7 +707,9 @@ async function init(north,manifest){
    cancelAnimationFrame(frame);observer.disconnect();gameInput.destroy();controls.dispose();
    overviewAbort?.abort();longTaskObserver?.disconnect();
    wideLayer?.dispose();
+   wildlife?.dispose();
    void streamer.dispose();
+   natureRenderer.dispose();
    avatar.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
    renderer.dispose();
  },{once:true});
