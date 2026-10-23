@@ -49,6 +49,8 @@ function occupied(x,z,field){
  return false;
 }
 function kindForArea(tag,roll){
+ if(tag==='grove'||tag==='canopy')return roll<.85?'tree':'bush';
+ if(tag==='shrub')return 'bush';
  if(tag==='wood')return roll<.72?'tree':roll<.90?'bush':roll<.97?'grass':'rock';
  if(tag==='scrub')return roll<.72?'bush':roll<.95?'grass':'rock';
  if(tag==='grass')return roll<.74?'grass':roll<.90?'flower':roll<.97?'bush':'rock';
@@ -80,7 +82,7 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=540}={}){
   add('tree',tree[0],tree[1],entry.id+':osm-tree:'+tree.join(':'));
  }
  if(out.length>=maxTotal)return out;
- const areas=overlay.areas.slice(0,500);
+ const areas=[...overlay.areas].sort((a,b)=>hash(String(a.id)+':scatter')-hash(String(b.id)+':scatter')).slice(0,1500);
  for(const area of areas){
   if(!Array.isArray(area.ring)||area.ring.length<3||area.ring.length>5000)continue;
   const ring=area.ring;
@@ -90,10 +92,22 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=540}={}){
    minZ=Math.max(-field.size/2,Math.min(...ring.map(p=>p[1]))),
    maxZ=Math.min(field.size/2,Math.max(...ring.map(p=>p[1])));
   if(maxX-minX<1||maxZ-minZ<1)continue;
+  // Aerial photo-derived tree crown may be smaller than the grid step.
+  // Place at its observed polygon centroid, not in an arbitrary courtyard.
+  if(area.kind==='canopy'||area.kind==='shrub'){
+   const x=ring.reduce((n,p)=>n+p[0],0)/ring.length;
+   const z=ring.reduce((n,p)=>n+p[1],0)/ring.length;
+   if(inside(x,z,ring)){
+    const kind=area.kind==='canopy'?'tree':'bush';
+    candidates.push({kind,x,z,seed:area.id+':crown',priority:-1});
+   }
+  }
   // Two passes: preserve standing trees, then carpet their gaps with small plants.
   for(const layer of ['canopy','understory']){
-   const step=layer==='canopy'?(area.kind==='wood'?13:area.kind==='park'?18:20):
-       area.kind==='wood'?5.5:area.kind==='grass'?5.5:area.kind==='scrub'?7:8;
+   const step=layer==='canopy'?(area.kind==='wood'||area.kind==='grove'?13:area.kind==='canopy'?10:area.kind==='park'?18:20):
+       area.kind==='wood'||area.kind==='grove'?5.5:area.kind==='canopy'?30:area.kind==='grass'?5.5:area.kind==='shrub'?9:area.kind==='scrub'?7:8;
+   if(layer==='understory'&&area.kind==='canopy')continue;
+   if(layer==='canopy'&&(area.kind==='shrub'||area.kind==='grass'))continue;
    const chance=layer==='canopy'?.66:.75;
    const xmin=Math.ceil((minX+entry.offset[0])/step),
     xmax=Math.floor((maxX+entry.offset[0])/step),
@@ -112,8 +126,8 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=540}={}){
     let kind;
     if(layer==='understory'){
      const r=hash(seed+':kind');
-     kind=area.kind==='wood'?(r<.65?'grass':r<.96?'bush':'flower'):
-       area.kind==='scrub'?(r<.72?'bush':'grass'):
+     kind=area.kind==='wood'||area.kind==='grove'?(r<.65?'grass':r<.96?'bush':'flower'):
+       area.kind==='shrub'?'bush':area.kind==='scrub'?(r<.72?'bush':'grass'):
        area.kind==='grass'?(r<.85?'grass':'flower'):
        (r<.68?'grass':r<.92?'bush':'flower');
     }else{
