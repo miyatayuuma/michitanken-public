@@ -1,0 +1,41 @@
+name: Public wide overview browser acceptance
+on:
+  pull_request:
+    paths:
+      - 'src/main.js'
+      - 'src/tile-stream.js'
+      - 'src/wide-overview.js'
+      - 'scripts/browser-wide-overview.mjs'
+      - '.github/workflows/wide-overview-browser.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fictional-mobile-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install public dependencies and mobile Chromium
+        run: |
+          npm install --no-audit --no-fund
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Exercise fictional 5x5 atlas, map/walk switching, and GPU budgets
+        run: |
+          npm run dev -- --host 127.0.0.1 --port 8080 --strictPort > /tmp/michi-vite.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:8080/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node scripts/browser-wide-overview.mjs
+      - name: Publish fictional mobile screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: task5c-fictional-wide-mobile
+          path: task5c-wide-mobile.png
+          if-no-files-found: ignore

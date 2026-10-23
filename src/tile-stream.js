@@ -40,7 +40,7 @@ export function createTileStreamer({manifest,fetchTile,mount,unmount,onChange=()
   })();
   loading.set(id,run);publish();return run;
  }
- function update(x,z,{retainAll=false}={}){
+ function update(x,z,{retainAll=false,retainIds=[]}={}){
   if(closed)return;
   const desired=manifest.tiles.filter(tile=>distanceFromRect(x,z,tile,manifest.size)<=PRELOAD_DISTANCE);
   for(const tile of desired){
@@ -51,7 +51,7 @@ export function createTileStreamer({manifest,fetchTile,mount,unmount,onChange=()
   }
   for(const [id,mounted] of [...active]){
    const tile=descriptors.get(id);
-   if(retainAll||distanceFromRect(x,z,tile,manifest.size)<=RELEASE_DISTANCE)continue;
+   if(retainAll||retainIds.includes(id)||distanceFromRect(x,z,tile,manifest.size)<=RELEASE_DISTANCE)continue;
    // Keep the nearest tile until the replacement is mounted.
    if(![...active.keys()].some(other=>other!==id&&distanceFromRect(x,z,descriptors.get(other),manifest.size)===0))continue;
    active.delete(id);
@@ -76,8 +76,36 @@ export function createTileStreamer({manifest,fetchTile,mount,unmount,onChange=()
   if(failed.length)throw new AggregateError(failed.map(f=>f.error),'Unable to load: '+failed.map(f=>f.id).join(','));
   return [...active.keys()];
  }
+ /** Iterate snapshots without GPU mounting them or retaining the complete map in CPU cache. */
+ async function scanAll({concurrency=2,signal=null,onTile}={}){
+  if(typeof onTile!=='function'||!Number.isInteger(concurrency)||concurrency<1)
+   throw Error('scanAll requires onTile and positive concurrency');
+  if(closed||signal?.aborted)throw new DOMException('Aborted','AbortError');
+  const entries=[...manifest.tiles],failed=[];
+  let cursor=0;
+  const workers=Array.from({length:Math.min(concurrency,entries.length)},async()=>{
+   while(cursor<entries.length&&!signal?.aborted&&!closed){
+    const entry=entries[cursor++];
+    try{
+     // Shared cached snapshots are read-only; remote snapshots are not cached
+     // unless separately mounted by the normal walk-mode streamer.
+     const field=cache.has(entry.id)?cache.get(entry.id):await fetchTile(entry);
+     if(closed||signal?.aborted)break;
+     validateTileForManifest(manifest,entry,field);
+     await onTile(entry,field);
+    }catch(error){
+     failed.push({id:entry.id,error});
+    }
+   }
+  });
+  await Promise.all(workers);
+  if(closed||signal?.aborted)throw new DOMException('Aborted','AbortError');
+  if(failed.length)throw new AggregateError(failed.map(f=>f.error),
+   'Unable to scan: '+failed.map(f=>f.id).join(','));
+  return entries.length;
+ }
  const getCached=()=>[...cache].map(([id,field])=>({tile:descriptors.get(id),field}));
- return {ensure,ensureAll,update,getCached,get active(){return active;},get errors(){return errors;},
+ return {ensure,ensureAll,scanAll,update,getCached,get active(){return active;},get errors(){return errors;},
   get loading(){return loading;},snapshot:()=>({active:[...active.keys()],pending:[...loading.keys()],cached:[...cache.keys()],errors:[...errors.keys()]}),
   async dispose(){
    closed=true;
