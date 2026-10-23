@@ -26,13 +26,14 @@ function isWithin(parent, child) {
   return rel === '' || (!rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel));
 }
 
-async function safeCopy(from, to) {
+async function safeCopy(from, to, relative = null, exclusions = []) {
+  if (relative && exclusions.some(item => relative === item || relative.startsWith(item + '/'))) return;
   const stat = await fs.lstat(from);
   if (stat.isSymbolicLink()) throw new Error('Symbolic link refused: ' + from);
   if (stat.isDirectory()) {
     await fs.mkdir(to, { recursive: true });
     for (const name of await fs.readdir(from)) {
-      await safeCopy(path.join(from, name), path.join(to, name));
+      await safeCopy(path.join(from, name), path.join(to, name), relative ? relative + '/' + name : null, exclusions);
     }
   } else if (stat.isFile()) {
     await fs.mkdir(path.dirname(to), { recursive: true });
@@ -62,7 +63,7 @@ function validateManifest(data) {
     throw new Error('Empty path arrays are not allowed');
   }
   for (const item of data.publicPaths) {
-    if (data.protectedPaths.some(protectedPath => intersects(item, protectedPath))) {
+    if (data.protectedPaths.some(protectedPath => item === protectedPath || item.startsWith(protectedPath + '/'))) {
       throw new Error('Public update overlaps private-protected path: ' + item);
     }
     if (!data.privatePaths.some(base => intersects(base, item))) {
@@ -106,7 +107,7 @@ export async function assembleProduction({ publicRoot = DEFAULT_PUBLIC_ROOT, pri
     await safeCopy(path.join(privateDir, item), path.join(outputDir, item));
   }
   for (const item of manifest.publicPaths) {
-    await safeCopy(path.join(publicDir, item), path.join(outputDir, item));
+    await safeCopy(path.join(publicDir, item), path.join(outputDir, item), item, manifest.protectedPaths);
   }
   for (const item of manifest.protectedPaths) {
     const original = path.join(privateDir, item);
