@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {pixelRatioBudget,tileDetail,geometryStats,NEAR_TILE_MARGIN} from '../lib/render-policy.mjs';
 import {buildRoadRibbon} from '../lib/road-surface.mjs';
+import {terrainMeshHeight} from '../lib/geo.mjs';
 import {createWaterLayer} from '../src/water.js';
 import {createTileStreamer} from '../src/tile-stream.js';
 
@@ -33,12 +34,72 @@ test('overview road tessellation reduces vertices but preserves source endpoints
  for(const field of [north,south])for(const road of field.osm.roads){
   const a=road.points[0],b=road.points[1];
   const full=buildRoadRibbon(a,b,road.width,field,.23);
-  const low=buildRoadRibbon(a,b,road.width,field,.23,{alongStep:11,acrossStep:8});
+  const low=buildRoadRibbon(a,b,road.width,field,.23,{alongStep:11,acrossStep:8,terrainSafe:true});
   fullTriangles+=full.length/9;
   overviewTriangles+=low.length/9;
   assert.ok(low.every(Number.isFinite));
  }
  assert.ok(overviewTriangles<fullTriangles*.52,`Road LOD improvement insufficient: ${overviewTriangles}/${fullTriangles}`);
+});
+function minimumClearance(verts,field){
+ let minimum=Infinity;
+ for(let i=0;i<verts.length;i+=9){
+  const triangle=[verts.slice(i,i+3),verts.slice(i+3,i+6),verts.slice(i+6,i+9)];
+  for(const weights of [[1/3,1/3,1/3],[.5,.5,0],[0,.5,.5],[.5,0,.5]]){
+   const [x,y,z]=[0,1,2].map(k=>triangle.reduce((sum,p,j)=>sum+weights[j]*p[k],0));
+   minimum=Math.min(minimum,y-(terrainMeshHeight(field.terrain,x,z)-field.terrain.min));
+  }
+ }
+ return minimum;
+}
+test('overview road triangles clear a synthetic DEM ridge in their interiors',()=>{
+ // Coarse corner heights miss the high DEM vertex under the ribbon center.
+ const elevations=Array(25).fill(0);elevations[12]=8;
+ const field={terrain:{count:5,size:40,elevations,min:0}};
+ const a=[-15,0],b=[15,0],options={alongStep:32,acrossStep:8};
+ const old=buildRoadRibbon(a,b,8,field,.23,options);
+ const safe=buildRoadRibbon(a,b,8,field,.23,{...options,terrainSafe:true});
+ assert.ok(minimumClearance(old,field)<-2,'Baseline fixture must bury coarse triangles');
+ assert.ok(safe.length>old.length,'DEM fold must create additional triangles');
+ assert.ok(minimumClearance(safe,field)>=.23-1e-6,'Safe ribbon must clear all sampled triangle interiors');
+});
+test('DEM-face road clipping also clears diagonal ridges and tile-border overhangs',()=>{
+ const elevations=Array(25).fill(0);
+ elevations[7]=9;elevations[12]=5;elevations[18]=7;
+ const field={terrain:{count:5,size:40,elevations,min:0}};
+ for(const [a,b] of [
+  [[-18,-17],[18,16]],
+  [[-22,-11],[23,13]], // ribbon straddles clamped DEM edges
+  [[-19,18],[18,-19]]
+ ]){
+  const verts=buildRoadRibbon(a,b,7,field,.31,{alongStep:14,acrossStep:8,terrainSafe:true});
+  assert.ok(verts.length>0&&verts.every(Number.isFinite));
+  assert.ok(minimumClearance(verts,field)>=.31-1e-5,a+' -> '+b+': road penetrated DEM');
+ }
+});
+test('terrain-safe overview follows a 65x65 fictional DEM within the road triangle budget',()=>{
+ const elevations=[];
+ for(let z=0;z<65;z++)for(let x=0;x<65;x++)
+  elevations.push(10+Math.sin(x*.11)*3+Math.cos(z*.13)*2);
+ const field={terrain:{count:65,size:500,elevations,min:0}};
+ const a=[-250,-250],b=[250,250],width=4;
+ const full=buildRoadRibbon(a,b,width,field,.23);
+ const safe=buildRoadRibbon(a,b,width,field,.23,{alongStep:11,acrossStep:8,terrainSafe:true});
+ assert.ok(safe.length/9<full.length/9*.65,'Dense DEM should still substantially reduce triangles');
+ assert.ok(minimumClearance(safe,field)>=.23-1e-5,'Dense DEM ribbon intersects terrain');
+});
+test('overview geometry clips DEM folds without gaps in road footprint',()=>{
+ const elevations=Array(25).fill(0);elevations[7]=9;elevations[12]=5;elevations[18]=7;
+ const field={terrain:{count:5,size:40,elevations,min:0}};
+ for(const [a,b] of [[[-18,-17],[18,16]],[[-22,-11],[23,13]],[[-28,-28],[25,25]]]){
+  const width=7,verts=buildRoadRibbon(a,b,width,field,.31,{terrainSafe:true});
+  let area=0;
+  for(let i=0;i<verts.length;i+=9)
+   area+=Math.abs((verts[i+3]-verts[i])*(verts[i+8]-verts[i+2])-
+    (verts[i+5]-verts[i+2])*(verts[i+6]-verts[i]))/2;
+  const expected=width*Math.hypot(b[0]-a[0],b[1]-a[1]);
+  assert.ok(Math.abs(area-expected)<1e-5,'Clipped road must cover original footprint exactly');
+ }
 });
 test('overview river lowers tessellation for a synthetic stream without losing geometry',()=>{
  for(const base of [north,south]){

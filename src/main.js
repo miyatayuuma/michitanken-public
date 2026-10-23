@@ -78,10 +78,10 @@ function addRoads(field,parent,layerSet,detail='full'){
  const step=detail==='overview'?OVERVIEW_ROAD_STEP:FULL_ROAD_STEP;
  for(const road of field.osm.roads){
   const kind=road.bridge?'bridge':['footway','path','steps','pedestrian','cycleway'].includes(road.kind)?'path':'road';
-  for(let i=1;i<road.points.length;i++)batches[kind].push(...buildRoadRibbon(road.points[i-1],road.points[i],road.width,field,road.bridge ? .40 : .23,{alongStep:step,acrossStep:detail==='overview'?8:2.4}));
+  for(let i=1;i<road.points.length;i++)batches[kind].push(...buildRoadRibbon(road.points[i-1],road.points[i],road.width,field,road.bridge ? .40 : .23,{alongStep:step,acrossStep:detail==='overview'?8:2.4,terrainSafe:detail==='overview'}));
  }
  for(const railway of field.osm.railways||[])if(!railway.tunnel)for(let i=1;i<railway.points.length;i++)
-  batches.railway.push(...buildRoadRibbon(railway.points[i-1],railway.points[i],railway.width||2.5,field,railway.bridge?2.8:.31,{alongStep:step,acrossStep:detail==='overview'?8:2.4}));
+  batches.railway.push(...buildRoadRibbon(railway.points[i-1],railway.points[i],railway.width||2.5,field,railway.bridge?2.8:.31,{alongStep:step,acrossStep:detail==='overview'?8:2.4,terrainSafe:detail==='overview'}));
  for(const [type,verts] of Object.entries(batches)){
   if(!verts.length)continue;
   const colors={road:0xded8c5,path:0xedbb7a,railway:0x5e6b6e,bridge:0xeab878};
