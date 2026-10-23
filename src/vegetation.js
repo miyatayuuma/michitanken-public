@@ -57,12 +57,21 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=260}={}){
  const add=(kind,x,z,seed)=>{
   if(!SPEC[kind]||used[kind]>=SPEC[kind].limit||out.length>=maxTotal||
      Math.abs(x)>=field.size/2-.5||Math.abs(z)>=field.size/2-.5||occupied(x,z,field))return;
+  // Overlapping OSM landuse polygons must not stack identical trunks/props.
+  const spacing=kind==='tree'?9:kind==='bush'?3:1.5;
+  if(out.some(p=>p.kind===kind&&Math.hypot(p.x-x,p.z-z)<spacing))return;
   const pick=hash(seed+':model'),shape=SPEC[kind];
   const model=shape.models[Math.floor(pick*shape.models.length)];
   const height=shape.height[0]+hash(seed+':height')*(shape.height[1]-shape.height[0]);
   out.push({kind,model,x,z,height,yaw:hash(seed+':angle')*Math.PI*2});
   used[kind]++;
  };
+ // Explicit OSM natural=tree nodes take priority over procedural woodland density.
+ for(const tree of (overlay.trees||[]).slice(0,200)){
+  if(!Array.isArray(tree)||tree.length!==2||!tree.every(Number.isFinite))continue;
+  const seed=entry.id+':osm-tree:'+tree.join(':');
+  add('tree',tree[0],tree[1],seed);
+ }
  for(const area of overlay.areas.slice(0,500)){
   if(!Array.isArray(area.ring)||area.ring.length<3||area.ring.length>5000)continue;
   const ring=area.ring;
@@ -84,12 +93,7 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=260}={}){
    if(kind)add(kind,x,z,seed);
   }
  }
- // Mapped individual trees are supplementary, not guesses about residences.
- for(const tree of (overlay.trees||[]).slice(0,200)){
-  if(!Array.isArray(tree)||tree.length!==2||!tree.every(Number.isFinite))continue;
-  const seed=entry.id+':osm-tree:'+tree.join(':');
-  add('tree',tree[0],tree[1],seed);
- }
+
  return out;
 }
 
