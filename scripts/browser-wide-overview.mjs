@@ -38,7 +38,12 @@ try{
  assert.ok(stats.levels.length<25,'Distant tiles must not be GPU-mounted');
  assert.equal(await page.locator('#scene').getAttribute('data-wide-overview-tiles'),'25');
  await page.screenshot({path:'task5c-wide-mobile.png',fullPage:true});
+ assert.equal(await page.evaluate(()=>window.__michiDebug.panOverview(1000,1000)),true);
+ await page.waitForFunction(()=>window.__michiDebug.state().tiles.active.includes('t-4-4'),null,{timeout:20000});
+ const farState=await page.evaluate(()=>window.__michiDebug.state());
+ assert.ok(farState.tiles.active.includes('north'),'Player tile must survive distant overview pan');
  await page.locator('#mode').click();
+ await page.waitForTimeout(350); // Cover multiple fixed-step walking updates after return.
  await page.waitForFunction(()=>window.__michiDebug.renderStats().wideOverview===null,null,{timeout:10000});
  const after=await page.evaluate(()=>window.__michiDebug.renderStats());
  assert.equal(after.wideOverview,null,'Walk mode should release wide atlas');
