@@ -13,6 +13,7 @@ import {fitGlobalWaterProfiles,profilesInLocalSpace} from '../lib/tile-water.mjs
 import {overviewPose} from '../lib/overview.mjs';
 import {createWideOverview,wideOverviewNeeded} from './wide-overview.js';
 import {pixelRatioBudget,tileDetail,geometryStats,OVERVIEW_ROAD_STEP,FULL_ROAD_STEP} from '../lib/render-policy.mjs';
+import {createVegetationRenderer} from './vegetation.js';
 import './style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.querySelector('#details');
 let renderer,controls,scene,camera,frame=0;
@@ -149,6 +150,18 @@ async function init(north,manifest){
  const world=createTiledWorld(manifest);
  const visuals=new Map(),layerVisibility={roads:true,buildings:true};
  const flatWater=new URLSearchParams(location.search).get('water')==='flat';
+ const natureEnabled=new URLSearchParams(location.search).get('nature')!=='off';
+ const natureRenderer=createVegetationRenderer({baseURL:import.meta.env.BASE_URL});
+ async function vegetationOverlay(entry){
+   if(!natureEnabled)return null;
+   const response=await fetch(`${import.meta.env.BASE_URL}data/vegetation/${entry.id}.json`);
+   if(response.status===404||!response.headers.get('content-type')?.includes('json'))return null;
+   if(!response.ok)throw Error('Vegetation overlay HTTP '+response.status);
+   const data=await response.json();
+   if(data?.schema!==1||data.tileId!==entry.id||!Array.isArray(data.areas))
+     throw Error('Invalid mapped vegetation overlay '+entry.id);
+   return data;
+ }
  const wideMap=wideOverviewNeeded(manifest);
  let wideLayer=null;
  let elapsed=0,streamer=null,playerState=null,mode='walk';
@@ -172,6 +185,7 @@ async function init(north,manifest){
    const mounted=[...visuals.values()];
    const stats=geometryStats(mounted);
    container.dataset.loadedTiles=[...visuals.keys()].join(',');
+   container.dataset.natureInstances=String(mounted.reduce((n,v)=>n+(v.nature?.userData.vegetationCount||0),0));
    container.dataset.waterMaterial=flatWater?'flat':'procedural';
    container.dataset.waterMeshes=String(mounted.reduce((n,v)=>n+(v.water?.group.children.length||0),0));
    container.dataset.waterTriangles=String(stats.waterTriangles);
@@ -270,6 +284,19 @@ async function init(north,manifest){
      :prefix+progressLabel+' · '+current+progress+error;
    status.classList.toggle('failed',!!snapshot.errors.length);
  }
+ async function mountVegetation(visual){
+   if(!natureEnabled)return;
+   try{
+     const overlay=await vegetationOverlay(visual.entry);
+     if(visual.removed||!overlay)return;
+     const group=await natureRenderer.build(visual.entry,visual.field,overlay);
+     if(visual.removed){disposeObject(group);return;}
+     if(!group.userData.vegetationCount)return;
+     visual.nature=group;visual.root.add(group);updateLayerMetrics();
+   }catch(error){
+     if(!visual.removed)console.warn('Optional mapped vegetation unavailable:',visual.entry.id,error);
+   }
+ }
  async function mount(entry,field){
    // Stagger terrain, roads, buildings and water uploads over separate RAFs.
    // This avoids one giant 9-tile geometry construction task on first overview.
@@ -297,8 +324,9 @@ async function init(north,manifest){
      new THREE.Vector3(entry.offset[0]+h,field.terrain.max-world.baseElevation+maxHeight+3,entry.offset[1]+h)
    );
    const visual={entry,field,root,layers,level,requestedLevel:level,bounds,
-     lodQueued:false,removed:false,water:null};
+     lodQueued:false,removed:false,water:null,nature:null};
    visuals.set(entry.id,visual);
+   void mountVegetation(visual);
    refreshWater({entry,field});
    updateDetails();
    // Mode can change while a tile is being created.
@@ -441,7 +469,7 @@ async function init(north,manifest){
        const builder=createWideOverview(manifest,world.baseElevation);
        await streamer.scanAll({concurrency:2,signal,onTile:async(entry,field)=>{
          if(signal.aborted)return;
-         builder.addTile(entry,field);
+         builder.addTile(entry,field,await vegetationOverlay(entry));
          await nextFrame();
        }});
        if(signal.aborted)return;
@@ -544,6 +572,7 @@ async function init(north,manifest){
        longTaskCount:longTaskState.count,
        visibleTiles:Number(container.dataset.frustumVisibleTiles||0),
        wideOverview:wideLayer?{tiles:wideLayer.loadedTiles,...wideLayer.budget}:null,
+       natureInstances:Number(container.dataset.natureInstances||0),
        levels:[...visuals.values()].map(v=>({id:v.entry.id,level:v.level,visible:v.root.visible}))
      }),
      worldCollision:(x,z)=>collisionReason(world,x,z),
@@ -651,6 +680,7 @@ async function init(north,manifest){
    overviewAbort?.abort();longTaskObserver?.disconnect();
    wideLayer?.dispose();
    void streamer.dispose();
+   natureRenderer.dispose();
    avatar.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
    renderer.dispose();
  },{once:true});
