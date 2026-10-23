@@ -68,6 +68,53 @@ try{
   assert.equal(legacyStats.levels.length,9,'3x3 should preserve the complete native overview');
   console.log('Task5C legacy 3x3 browser baseline: PASS');
  }finally{await legacy.close();}
+ // Synthetic standard Gamepad API smoke test on fictional data only.
+ const gamepadPage=await context.newPage();
+ try{
+  await gamepadPage.addInitScript(()=>{
+   const buttons=Array.from({length:17},()=>({pressed:false,value:0}));
+   window.__mockGC201={
+    connected:true,mapping:'standard',id:'synthetic GC201 XInput',index:0,
+    axes:[0,0,0,0],buttons
+   };
+   Object.defineProperty(navigator,'getGamepads',{configurable:true,
+    value:()=>[window.__mockGC201]});
+  });
+  const padErrors=[];
+  gamepadPage.on('pageerror',e=>padErrors.push(e.message));
+  await gamepadPage.goto(origin+'/?test=1',{waitUntil:'domcontentloaded'});
+  await gamepadPage.waitForFunction(()=>document.querySelector('#scene')?.dataset.appReady==='true',null,{timeout:30000});
+  const beforeWalk=await gamepadPage.evaluate(()=>window.__michiDebug.state());
+  await gamepadPage.evaluate(()=>{window.__mockGC201.axes[1]=-1;});
+  await gamepadPage.waitForTimeout(500);
+  await gamepadPage.evaluate(()=>{window.__mockGC201.axes[1]=0;});
+  const afterWalk=await gamepadPage.evaluate(()=>window.__michiDebug.state());
+  assert.ok(Math.hypot(afterWalk.x-beforeWalk.x,afterWalk.z-beforeWalk.z)>.1,
+   'left stick must move the player through existing collision logic');
+  await gamepadPage.evaluate(()=>{window.__mockGC201.buttons[0].pressed=true;});
+  await gamepadPage.waitForFunction(()=>document.querySelector('#app')?.dataset.mode==='map',null,{timeout:4000});
+  await gamepadPage.evaluate(()=>{window.__mockGC201.buttons[0].pressed=false;});
+  await gamepadPage.waitForFunction(()=>document.querySelector('#scene')?.dataset.overviewReady==='true',null,{timeout:30000});
+  const projectionBefore=await gamepadPage.evaluate(()=>window.__michiDebug.overviewProjection().corners);
+  await gamepadPage.evaluate(()=>{window.__mockGC201.axes[0]=1;});
+  await gamepadPage.waitForTimeout(350);
+  await gamepadPage.evaluate(()=>{window.__mockGC201.axes[0]=0;});
+  const projectionAfter=await gamepadPage.evaluate(()=>window.__michiDebug.overviewProjection().corners);
+  assert.ok(Math.abs(projectionAfter[0].ndc[0]-projectionBefore[0].ndc[0])>.005,
+   'left stick must pan the overview map');
+  await gamepadPage.evaluate(()=>{window.__mockGC201.buttons[7].pressed=true;});
+  await gamepadPage.waitForTimeout(350);
+  await gamepadPage.evaluate(()=>{window.__mockGC201.buttons[7].pressed=false;});
+  const projectionZoomed=await gamepadPage.evaluate(()=>window.__michiDebug.overviewProjection().corners);
+  assert.ok(Math.abs(projectionZoomed[0].ndc[0]-projectionAfter[0].ndc[0])>.003,
+   'ZR must zoom the overview');
+  await gamepadPage.evaluate(()=>{window.__mockGC201.buttons[0].pressed=true;});
+  await gamepadPage.waitForFunction(()=>document.querySelector('#app')?.dataset.mode==='walk',null,{timeout:4000});
+  await gamepadPage.evaluate(()=>{window.__mockGC201.buttons[0].pressed=false;});
+  await gamepadPage.evaluate(()=>{window.__mockGC201.connected=false;});
+  assert.deepEqual(padErrors,[],'gamepad browser run should have no page errors');
+  console.log('GC201 synthetic browser walk/map/A/pan/zoom/disconnect: PASS');
+ }finally{await gamepadPage.close();}
  console.log(JSON.stringify({status:'PASS',overview:stats.wideOverview,overviewFullTileCount:stats.levels.length,walkTileCount:after.levels.length,gpuGeometries:stats.memory.geometries}));
 }finally{
  await context.close();await browser.close();
