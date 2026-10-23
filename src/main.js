@@ -7,7 +7,7 @@ import {createCollisionWorld,chooseSpawn,advancePlayer,terrainHeight,blocked,col
 import {createGameInput} from './controls.js';
 import {createWaterLayer} from './water.js';
 import {pointOnPath} from '../lib/water-field.mjs';
-import {validateManifest,createTiledWorld,registerTile,removeTile,tileAtPosition} from '../lib/tiles.mjs';
+import {validateManifest,createTiledWorld,registerTile,removeTile,tileAtPosition,distanceFromRect,PRELOAD_DISTANCE} from '../lib/tiles.mjs';
 import {createTileStreamer} from './tile-stream.js';
 import {fitGlobalWaterProfiles,profilesInLocalSpace} from '../lib/tile-water.mjs';
 import {overviewPose} from '../lib/overview.mjs';
@@ -600,7 +600,13 @@ async function init(north,manifest){
    streamTime+=dt;if(streamTime>.2){
      const target=mode==='walk'?{x:playerState.x,z:playerState.z}:
        wideMap?{x:controls.target.x,z:controls.target.z}:{x:mapTarget.x,z:mapTarget.z};
-     streamer.update(target.x,target.z,{retainAll:mode==='map'&&!wideMap&&new URLSearchParams(location.search).get('view')!=='river'});streamTime=0;
+     // Never unload terrain/collision around the stationary player while
+     // the user pans far away on a large overview. Walking can then resume
+     // on the very next frame without terrainHeight() touching an absent tile.
+     const retainIds=mode==='map'&&wideMap
+       ?manifest.tiles.filter(entry=>distanceFromRect(playerState.x,playerState.z,entry,manifest.size)<=PRELOAD_DISTANCE).map(entry=>entry.id)
+       :[];
+     streamer.update(target.x,target.z,{retainIds,retainAll:mode==='map'&&!wideMap&&new URLSearchParams(location.search).get('view')!=='river'});streamTime=0;
    }
    qualityTime+=dt;
    if(qualityTime>.28){
