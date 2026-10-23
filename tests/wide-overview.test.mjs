@@ -112,3 +112,25 @@ test('Task 5C fictional atlas keeps full tile coverage in one shared geometry',(
   assert.deepEqual(Object.keys(finished.layers),['water','roads','buildings']);
  }finally{finished?.dispose();globalThis.document=previousDocument;}
 });
+
+test('Task 5C retains the player collision tile during far-away map inspection',async()=>{
+ const manifest=manifestFor(5),home=manifest.tiles.find(t=>t.offset[0]===0&&t.offset[1]===0);
+ const far=manifest.tiles.at(-1);
+ const released=[];
+ const stream=createTileStreamer({manifest,
+  fetchTile:async entry=>fieldFor(manifest,entry),
+  mount:async entry=>({id:entry.id}),
+  unmount:async entry=>{released.push(entry.id);}
+ });
+ try{
+  await stream.ensure(home.id);
+  await stream.ensure(far.id);
+  stream.update(...far.offset,{retainIds:[home.id]});
+  assert.ok(stream.snapshot().active.includes(home.id),'Stationary player tile must remain mounted');
+  assert.ok(!released.includes(home.id));
+  // On switching back to walk, the far tile can be disposed normally.
+  stream.update(...home.offset);
+  assert.ok(stream.snapshot().active.includes(home.id));
+  assert.ok(released.includes(far.id));
+ }finally{await stream.dispose();}
+});
