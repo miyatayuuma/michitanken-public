@@ -293,7 +293,7 @@ async function init(north,manifest){
    const visible=visuals.size;
    const bounds=world.bounds;
    const label=(bounds.maxX-bounds.minX)+'m × '+(bounds.maxZ-bounds.minZ)+'m';
-   const prefix=mode==='map'?'全域 '+label+' · ':'架空のデモ地形を表示中 · ';
+   const prefix=mode==='map'?'全域 '+label+' · ':(container.dataset.fieldLabel||'フィールドを表示中')+' · ';
    const progressLabel=wideMap&&mode==='map'&&wideLayer
      ?'広域 '+wideLayer.loadedTiles+'/'+manifest.tiles.length+' · 詳細 '+visible
      :'読込 '+visible+'/'+manifest.tiles.length;
