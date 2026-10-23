@@ -16,6 +16,8 @@ import {createWideOverview,wideOverviewNeeded} from './wide-overview.js';
 import {pixelRatioBudget,tileDetail,geometryStats,OVERVIEW_ROAD_STEP,FULL_ROAD_STEP} from '../lib/render-policy.mjs';
 import {createVegetationRenderer,natureInstanceBudget} from './vegetation.js';
 import {createWildlifeRenderer} from './wildlife.js';
+import {loadPlayerSprite} from './player-sprite.js';
+import {renderedFootHeight} from '../lib/avatar-ground.mjs';
 import './style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.querySelector('#details');
 let renderer,controls,scene,camera,frame=0;
@@ -292,7 +294,7 @@ async function init(north,manifest){
    const visible=visuals.size;
    const bounds=world.bounds;
    const label=(bounds.maxX-bounds.minX)+'m × '+(bounds.maxZ-bounds.minZ)+'m';
-   const prefix=mode==='map'?'全域 '+label+' · ':'架空のデモ地形を表示中 · ';
+   const prefix=mode==='map'?'全域 '+label+' · ':(container.dataset.fieldLabel||'フィールドを表示中')+' · ';
    const progressLabel=wideMap&&mode==='map'&&wideLayer
      ?'広域 '+wideLayer.loadedTiles+'/'+manifest.tiles.length+' · 詳細 '+visible
      :'読込 '+visible+'/'+manifest.tiles.length;
@@ -378,7 +380,9 @@ async function init(north,manifest){
  await streamer.ensure('north');
  const spawn=chooseSpawn(createCollisionWorld(north));
  playerState={...spawn,facing:spawn.yaw,moving:false,collided:false,distance:0};
- const avatar=makeAvatar();avatar.traverse(o=>{if(o.isMesh)o.renderOrder=4;});scene.add(avatar);
+ const playerSprite=await loadPlayerSprite({baseURL:import.meta.env.BASE_URL});
+ const avatar=playerSprite?.group||makeAvatar();avatar.traverse(o=>{if(o.isMesh)o.renderOrder=4;});scene.add(avatar);
+ container.dataset.avatarKind=playerSprite?'sprite':'model';
  const controls=new OrbitControls(camera,renderer.domElement);
  controls.enableDamping=true;controls.dampingFactor=.07;
  controls.maxPolarAngle=Math.PI/2.05;controls.minDistance=15;controls.maxDistance=9000;
@@ -405,7 +409,21 @@ async function init(north,manifest){
      camera.position.set(...next.camera);
    }
  });
- const avatarPosition=()=>{avatar.position.set(playerState.x,playerState.y,playerState.z);avatar.rotation.y=playerState.facing;};
+ let footCache=null;
+ const avatarPosition=()=>{
+   let y=playerState.y;
+   if(playerSprite){
+     const owner=tileAtPosition(manifest,playerState.x,playerState.z),tile=owner&&world.tileWorlds.get(owner.id);
+     if(tile){
+       if(!footCache||footCache.field!==tile.field||footCache.x!==playerState.x||footCache.z!==playerState.z)
+         footCache={field:tile.field,x:playerState.x,z:playerState.z,
+           y:renderedFootHeight(tile.field,playerState.x-owner.offset[0],playerState.z-owner.offset[1],world.baseElevation,{roadStep:FULL_ROAD_STEP})};
+       y=footCache.y;
+     }
+   }
+   avatar.position.set(playerState.x,y,playerState.z);
+   if(!playerSprite)avatar.rotation.y=playerState.facing;
+ };
  function followCamera(dt,snap=false){
    const target=new THREE.Vector3(playerState.x,playerState.y+1.45,playerState.z);
    const horiz=cameraDistance*Math.cos(cameraPitch);
@@ -453,6 +471,7 @@ async function init(north,manifest){
    coords.textContent=`位置 X ${playerState.x.toFixed(1)}m / Z ${playerState.z.toFixed(1)}m · エリア ${owner?.id||'外'} · 標高 ${(playerState.y+world.baseElevation).toFixed(1)}m${contact}`;
  }
  function resetWalk(){
+   playerSprite?.reset();
    playerState={...spawn,facing:spawn.yaw,moving:false,collided:false,distance:0};
    cameraYaw=spawn.yaw;cameraPitch=.52;cameraDistance=14;gameInput.reset();
    avatarPosition();followCamera(0,true);updateHud();streamer.update(playerState.x,playerState.z);
@@ -593,10 +612,12 @@ async function init(north,manifest){
      ensureTile:id=>streamer.ensure(id),
      teleport:(x,z,yaw=Math.PI)=>{
        if(collisionReason(world,x,z))return false;
+       playerSprite?.reset();
        playerState={...playerState,x,z,y:terrainHeight(world,x,z),facing:yaw,collision:null,collided:false};
        cameraYaw=yaw;avatarPosition();followCamera(0,true);updateHud();streamer.update(x,z);return true;
      },
      state:()=>({...playerState,tiles:streamer.snapshot()}),
+     avatar:()=>playerSprite?.snapshot()||{kind:'model'},
      renderStats:()=>({
        ...geometryStats(visuals.values()),
        pixelRatio:renderer.getPixelRatio(),
@@ -692,6 +713,7 @@ async function init(north,manifest){
    // Frustum visibility must track the camera after every walk or orbit update.
    // LOD geometry rebuilds remain throttled above.
    updateVisibleTiles();
+   playerSprite?.update({state:playerState,camera,walking:mode==='walk'});
    wildlife?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
    renderer.render(scene,camera);
    frameIndex++;
@@ -723,7 +745,8 @@ async function init(north,manifest){
    wildlife?.dispose();
    void streamer.dispose();
    natureRenderer.dispose();
-   avatar.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
+   if(playerSprite)playerSprite.dispose();
+   else avatar.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
    renderer.dispose();
  },{once:true});
 }

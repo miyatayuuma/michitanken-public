@@ -5,6 +5,10 @@ on:
       - 'src/main.js'
       - 'src/tile-stream.js'
       - 'src/wide-overview.js'
+      - 'src/player-sprite.js'
+      - 'lib/sprite-animation.mjs'
+      - 'lib/avatar-ground.mjs'
+      - 'scripts/browser-player-sprite.mjs'
       - 'scripts/browser-wide-overview.mjs'
       - '.github/workflows/wide-overview-browser.yml'
   workflow_dispatch:
@@ -32,6 +36,7 @@ jobs:
             sleep 1
           done
           node scripts/browser-wide-overview.mjs
+          node scripts/browser-player-sprite.mjs
       - name: Publish fictional mobile screenshot
         if: always()
         uses: actions/upload-artifact@v4
