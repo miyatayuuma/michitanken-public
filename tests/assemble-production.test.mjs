@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { assembleProduction } from '../scripts/assemble-production.mjs';
+import { verifyProductionOverlay } from '../scripts/verify-production-overlay.mjs';
 
 async function write(root, name, value) {
   const dest = path.join(root, name);
@@ -86,4 +87,37 @@ test('directory updates automatically include new modules but skip nested privat
   assert.equal(await fs.readFile(path.join(outputRoot, 'public/assets/next-module.js'), 'utf8'), 'new optional code');
   assert.equal(await fs.readFile(path.join(outputRoot, 'public/data/field.json'), 'utf8'), '{"real":true}');
   assert.equal(await fs.readFile(path.join(outputRoot, 'public/games/catalog.json'), 'utf8'), '{"title":"private production name"}');
+});
+
+
+test('independent production overlay verification accepts an intact staged site', async t => {
+  const { scratch, publicRoot, privateRoot } = await setup(t);
+  const siteRoot = path.join(scratch, 'assembled');
+  await assembleProduction({ publicRoot, privateRoot, outputRoot: siteRoot });
+  const result = await verifyProductionOverlay({ publicRoot, privateRoot, siteRoot });
+  assert.equal(result.status, 'PASS');
+  assert.ok(result.protectedFiles >= 2);
+  assert.ok(result.publicCodeFiles >= 1);
+});
+
+test('independent verification rejects changed private data in a nested protected subtree', async t => {
+  const { scratch, publicRoot, privateRoot } = await setup(t);
+  const siteRoot = path.join(scratch, 'assembled');
+  await assembleProduction({ publicRoot, privateRoot, outputRoot: siteRoot });
+  await write(siteRoot, 'public/data/field.json', '{"tampered":true}');
+  await assert.rejects(
+    verifyProductionOverlay({ publicRoot, privateRoot, siteRoot }),
+    /Production integrity mismatch/
+  );
+});
+
+test('independent verification rejects changed public game code', async t => {
+  const { scratch, publicRoot, privateRoot } = await setup(t);
+  const siteRoot = path.join(scratch, 'assembled');
+  await assembleProduction({ publicRoot, privateRoot, outputRoot: siteRoot });
+  await write(siteRoot, 'public/assets/shared.js', 'unexpected game change');
+  await assert.rejects(
+    verifyProductionOverlay({ publicRoot, privateRoot, siteRoot }),
+    /Production integrity mismatch/
+  );
 });
