@@ -13,7 +13,7 @@ import {fitGlobalWaterProfiles,profilesInLocalSpace} from '../lib/tile-water.mjs
 import {overviewPose} from '../lib/overview.mjs';
 import {createWideOverview,wideOverviewNeeded} from './wide-overview.js';
 import {pixelRatioBudget,tileDetail,geometryStats,OVERVIEW_ROAD_STEP,FULL_ROAD_STEP} from '../lib/render-policy.mjs';
-import {createVegetationRenderer} from './vegetation.js';
+import {createVegetationRenderer,natureInstanceBudget} from './vegetation.js';
 import './style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.querySelector('#details');
 let renderer,controls,scene,camera,frame=0;
@@ -289,7 +289,7 @@ async function init(north,manifest){
    try{
      const overlay=await vegetationOverlay(visual.entry);
      if(visual.removed||!overlay)return;
-     const group=await natureRenderer.build(visual.entry,visual.field,overlay);
+     const group=await natureRenderer.build(visual.entry,visual.field,overlay,{maxTotal:natureInstanceBudget({coarsePointer,memoryGiB})});
      if(visual.removed){disposeObject(group);return;}
      if(!group.userData.vegetationCount)return;
      visual.nature=group;visual.root.add(group);updateLayerMetrics();
