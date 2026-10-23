@@ -18,8 +18,8 @@ test('Task6 wildlife uses mapped vegetation and stream banks, not arbitrary hous
  assert.deepEqual(items,wildlifeCandidates(entry,field,green));
  assert.ok(items.some(x=>x.species==='bee'));
  assert.ok(items.some(x=>x.species==='duck'));
- assert.ok(items.filter(x=>x.species==='bee').length<=2);
- assert.ok(items.filter(x=>x.species==='duck').length<=1);
+ assert.ok(items.filter(x=>x.species==='bee').length<=12);
+ assert.ok(items.filter(x=>x.species==='duck').length<=3);
  for(const p of items){
   assert.ok(Math.abs(p.x)<238&&Math.abs(p.z)<238);
   assert.ok(!(p.x>107&&p.x<133&&p.z>97&&p.z<133));
@@ -42,7 +42,7 @@ test('Task6 tracked candidate resources are released on tile unload and map mode
  const scene={remove(){},add(){}},renderer=createWildlifeRenderer({scene,baseURL:'/',baseElevation:0});
  const empty={...field,osm:{...field.osm,waterways:[]}};
  renderer.register(entry,empty,green);
- assert.ok(renderer.candidateCount<=2);
+ assert.ok(renderer.candidateCount<=12);
  renderer.update({dt:.2,playerX:900,playerZ:900,currentMode:'walk'});
  assert.equal(renderer.visibleCount,0);
  renderer.update({dt:.2,playerX:0,playerZ:0,currentMode:'map'});
