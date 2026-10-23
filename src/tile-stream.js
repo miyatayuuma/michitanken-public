@@ -40,7 +40,7 @@ export function createTileStreamer({manifest,fetchTile,mount,unmount,onChange=()
   })();
   loading.set(id,run);publish();return run;
  }
- function update(x,z,{retainAll=false}={}){
+ function update(x,z,{retainAll=false,retainIds=[]}={}){
   if(closed)return;
   const desired=manifest.tiles.filter(tile=>distanceFromRect(x,z,tile,manifest.size)<=PRELOAD_DISTANCE);
   for(const tile of desired){
@@ -51,7 +51,7 @@ export function createTileStreamer({manifest,fetchTile,mount,unmount,onChange=()
   }
   for(const [id,mounted] of [...active]){
    const tile=descriptors.get(id);
-   if(retainAll||distanceFromRect(x,z,tile,manifest.size)<=RELEASE_DISTANCE)continue;
+   if(retainAll||retainIds.includes(id)||distanceFromRect(x,z,tile,manifest.size)<=RELEASE_DISTANCE)continue;
    // Keep the nearest tile until the replacement is mounted.
    if(![...active.keys()].some(other=>other!==id&&distanceFromRect(x,z,descriptors.get(other),manifest.size)===0))continue;
    active.delete(id);
