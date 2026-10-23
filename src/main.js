@@ -407,7 +407,9 @@ async function init(north,manifest){
    scene.fog.near=next==='map'?1500:500;
    scene.fog.far=next==='map'?11000:1150;
    if(overviewAbort){overviewAbort.abort();overviewAbort=null;}
-   if(wideLayer)wideLayer.group.visible=next==='map';
+   // Do not keep atlas textures resident while the player is walking.
+   if(next==='walk'&&wideLayer){wideLayer.dispose();wideLayer=null;updateLayerMetrics();}
+   else if(wideLayer)wideLayer.group.visible=true;
    for(const visual of visuals.values()){
      visual.layers.outline.visible=next==='map';
      syncRoadDepth(visual.layers);
@@ -452,7 +454,7 @@ async function init(north,manifest){
      };
      startOverview().then(()=>{
        if(mode!=='map'||sequence!==overviewSequence)return;
-       resetMap();
+       if(!wideMap)resetMap(); // Preserve user pan/zoom during wide atlas acquisition.
        container.dataset.overviewReady=singleRiverView?'diagnostic':'true';
        reportStreaming(streamer.snapshot());
      }).catch(error=>{
