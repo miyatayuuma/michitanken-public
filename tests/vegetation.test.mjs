@@ -68,3 +68,29 @@ test('Task6 vegetation caps on low-memory devices and remains deterministic',()=
  assert.deepEqual(low,sampleVegetation(entry,field,overlay,{maxTotal:240}));
  assert.throws(()=>sampleVegetation(entry,field,overlay,{maxTotal:1000}),/budget/);
 });
+
+test('Task6 a mapped 2025 roadside tree crown places one tree without a landuse park',()=>{
+ const residential={size:500,osm:{roads:[{width:4,points:[[-50,0],[50,0]]}],
+  buildings:[],railways:[],waterAreas:[],waterways:[]}};
+ const cover={schema:1,tileId:entry.id,trees:[],areas:[
+  {id:'fictional-nagoya-canopy',kind:'canopy',
+   ring:[[7,1],[13,1],[13,9],[7,9]]}
+ ]};
+ const placed=sampleVegetation(entry,residential,cover,{maxTotal:10});
+ assert.equal(placed.length,1);
+ assert.equal(placed[0].kind,'tree');
+ assert.ok(placed[0].z>2,'Street tree must be beside, not in, road center');
+});
+test('Task6 2025 GIS excludes holes and shrine grove allows woodland understory',()=>{
+ const region={size:500,osm:{roads:[],buildings:[],railways:[],waterAreas:[],waterways:[]}};
+ const shrine={schema:1,tileId:entry.id,trees:[],areas:[{
+  id:'fictional-shrine',kind:'grove',
+  ring:[[-90,-90],[90,-90],[90,90],[-90,90]],
+  holes:[[[-30,-30],[30,-30],[30,30],[-30,30]]]
+ }]};
+ const placed=sampleVegetation(entry,region,shrine,{maxTotal:220});
+ assert.ok(placed.length>20,'Shrine with mapped precinct should include trees and understory');
+ assert.ok(placed.some(p=>p.kind==='tree'));
+ assert.ok(placed.some(p=>p.kind==='grass'||p.kind==='bush'));
+ assert.ok(placed.every(p=>!(Math.abs(p.x)<30&&Math.abs(p.z)<30)),'No planting inside the paved-area hole');
+});
