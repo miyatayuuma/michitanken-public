@@ -10,6 +10,11 @@ const SPEC={
  flower:{models:['flower_yellowA'],height:[.35,.8],limit:65},
  rock:{models:['rock_smallA'],height:[.45,1],limit:22}
 };
+/** Fixed upper limits are preliminary; phone p95 still needs real-device acceptance. */
+export function natureInstanceBudget({coarsePointer=false,memoryGiB=null}={}){
+ if(coarsePointer&&memoryGiB!==null&&memoryGiB<=4)return 240;
+ return coarsePointer?360:540;
+}
 function hash(seed){
  let h=2166136261;
  for(let i=0;i<seed.length;i++){h^=seed.charCodeAt(i);h=Math.imul(h,16777619);}
