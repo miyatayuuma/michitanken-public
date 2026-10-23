@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {sampleVegetation} from '../src/vegetation.js';
 
 const entry={id:'fictional-woods',offset:[500,0]};
@@ -46,7 +47,7 @@ test('Task6 does not invent nature when OSM polygon cover is absent',()=>{
  assert.deepEqual(sampleVegetation(entry,field,{schema:0,tileId:entry.id,areas:overlay.areas}),[]);
 });
 test('Task6 atlas path still has source-ground vegetation areas without model dependency',()=>{
- const source=(await import('node:fs')).readFileSync(new URL('../src/wide-overview.js',import.meta.url),'utf8');
+ const source=fs.readFileSync(new URL('../src/wide-overview.js',import.meta.url),'utf8');
  assert.ok(source.includes('if(vegetation?.schema===1'));
  assert.ok(source.indexOf('for(const area of vegetation.areas')<source.indexOf('for(const water of field.osm?.waterAreas'));
 });
