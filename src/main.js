@@ -11,6 +11,7 @@ import {validateManifest,createTiledWorld,registerTile,removeTile,tileAtPosition
 import {createTileStreamer} from './tile-stream.js';
 import {fitGlobalWaterProfiles,profilesInLocalSpace} from '../lib/tile-water.mjs';
 import {overviewPose} from '../lib/overview.mjs';
+import {createWideOverview,wideOverviewNeeded} from './wide-overview.js';
 import {pixelRatioBudget,tileDetail,geometryStats,OVERVIEW_ROAD_STEP,FULL_ROAD_STEP} from '../lib/render-policy.mjs';
 import './style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.querySelector('#details');
@@ -148,6 +149,8 @@ async function init(north,manifest){
  const world=createTiledWorld(manifest);
  const visuals=new Map(),layerVisibility={roads:true,buildings:true};
  const flatWater=new URLSearchParams(location.search).get('water')==='flat';
+ const wideMap=wideOverviewNeeded(manifest);
+ let wideLayer=null;
  let elapsed=0,streamer=null,playerState=null,mode='walk';
  const disposeObject=object=>{
    const materials=new Set(),geometries=new Set();
@@ -176,6 +179,8 @@ async function init(north,manifest){
    container.dataset.buildingTriangles=String(stats.buildingTriangles);
    container.dataset.lodFull=String(stats.full);
    container.dataset.lodOverview=String(stats.overview);
+   container.dataset.wideOverviewTiles=String(wideLayer?.loadedTiles||0);
+   container.dataset.wideOverviewTriangles=String(wideLayer?.budget.triangles||0);
    container.dataset.waterRibbons=String(mounted.reduce((n,v)=>n+(v.water?.summary.ribbons||0),0));
    container.dataset.waterFlowPaths=String(mounted.reduce((n,v)=>n+(v.water?.summary.flowPaths||0),0));
    container.dataset.waterLimited=String(mounted.some(v=>v.water?.summary.limited));
@@ -257,9 +262,12 @@ async function init(north,manifest){
    const bounds=world.bounds;
    const label=(bounds.maxX-bounds.minX)+'m × '+(bounds.maxZ-bounds.minZ)+'m';
    const prefix=mode==='map'?'全域 '+label+' · ':'架空のデモ地形を表示中 · ';
+   const progressLabel=wideMap&&mode==='map'&&wideLayer
+     ?'広域 '+wideLayer.loadedTiles+'/'+manifest.tiles.length+' · 詳細 '+visible
+     :'読込 '+visible+'/'+manifest.tiles.length;
    status.textContent=container.dataset.appReady==='false'
      ?'3Dフィールドを準備中 · 読込 '+visible+'/'+manifest.tiles.length
-     :prefix+'読込 '+visible+'/'+manifest.tiles.length+' · '+current+progress+error;
+     :prefix+progressLabel+' · '+current+progress+error;
    status.classList.toggle('failed',!!snapshot.errors.length);
  }
  async function mount(entry,field){
@@ -399,6 +407,7 @@ async function init(north,manifest){
    scene.fog.near=next==='map'?1500:500;
    scene.fog.far=next==='map'?11000:1150;
    if(overviewAbort){overviewAbort.abort();overviewAbort=null;}
+   if(wideLayer)wideLayer.group.visible=next==='map';
    for(const visual of visuals.values()){
      visual.layers.outline.visible=next==='map';
      syncRoadDepth(visual.layers);
@@ -420,7 +429,28 @@ async function init(north,manifest){
      // populate all nine GPU tiles during the textureless performance baseline.
      const singleRiverView=new URLSearchParams(location.search).get('view')==='river';
      overviewAbort=new AbortController();
-     (singleRiverView?streamer.ensure('north'):streamer.ensureAll({concurrency:2,signal:overviewAbort.signal})).then(()=>{
+     const signal=overviewAbort.signal;
+     const startOverview=async()=>{
+       if(singleRiverView){await streamer.ensure('north');return;}
+       if(!wideMap){await streamer.ensureAll({concurrency:2,signal});return;}
+       if(wideLayer)return;
+       // One fixed-size fallback atlas covers the full map while only nearby
+       // tiles retain their normal detail/collision meshes.
+       const builder=createWideOverview(manifest,world.baseElevation);
+       await streamer.scanAll({concurrency:2,signal,onTile:async(entry,field)=>{
+         if(signal.aborted)return;
+         builder.addTile(entry,field);
+         await nextFrame();
+       }});
+       if(signal.aborted)return;
+       const finished=builder.finish();
+       wideLayer=finished;
+       finished.layers.roads.visible=layerVisibility.roads;
+       finished.layers.buildings.visible=layerVisibility.buildings;
+       scene.add(finished.group);
+       updateLayerMetrics();
+     };
+     startOverview().then(()=>{
        if(mode!=='map'||sequence!==overviewSequence)return;
        resetMap();
        container.dataset.overviewReady=singleRiverView?'diagnostic':'true';
@@ -454,6 +484,7 @@ async function init(north,manifest){
  for(const name of ['roads','buildings'])document.querySelector('#'+name).onclick=()=>{
    layerVisibility[name]=!layerVisibility[name];
    for(const v of visuals.values())v.layers[name].visible=layerVisibility[name];
+   if(wideLayer&&name in wideLayer.layers)wideLayer.layers[name].visible=layerVisibility[name];
    const button=document.querySelector('#'+name);
    button.classList.toggle('selected',layerVisibility[name]);button.setAttribute('aria-pressed',String(layerVisibility[name]));
  };
@@ -510,6 +541,7 @@ async function init(north,manifest){
        frameP95Ms:Number(container.dataset.frameP95Ms||0),
        longTaskCount:longTaskState.count,
        visibleTiles:Number(container.dataset.frustumVisibleTiles||0),
+       wideOverview:wideLayer?{tiles:wideLayer.loadedTiles,...wideLayer.budget}:null,
        levels:[...visuals.values()].map(v=>({id:v.entry.id,level:v.level,visible:v.root.visible}))
      }),
      worldCollision:(x,z)=>collisionReason(world,x,z),
@@ -564,8 +596,9 @@ async function init(north,manifest){
      hudTime+=dt;if(hudTime>.13){updateHud();hudTime=0;}
    }else{accumulator=0;controls.update();}
    streamTime+=dt;if(streamTime>.2){
-     const target=mode==='walk'?{x:playerState.x,z:playerState.z}:{x:mapTarget.x,z:mapTarget.z};
-     streamer.update(target.x,target.z,{retainAll:mode==='map'&&new URLSearchParams(location.search).get('view')!=='river'});streamTime=0;
+     const target=mode==='walk'?{x:playerState.x,z:playerState.z}:
+       wideMap?{x:controls.target.x,z:controls.target.z}:{x:mapTarget.x,z:mapTarget.z};
+     streamer.update(target.x,target.z,{retainAll:mode==='map'&&!wideMap&&new URLSearchParams(location.search).get('view')!=='river'});streamTime=0;
    }
    qualityTime+=dt;
    if(qualityTime>.28){
@@ -601,6 +634,7 @@ async function init(north,manifest){
  window.addEventListener('pagehide',()=>{
    cancelAnimationFrame(frame);observer.disconnect();gameInput.destroy();controls.dispose();
    overviewAbort?.abort();longTaskObserver?.disconnect();
+   wideLayer?.dispose();
    void streamer.dispose();
    avatar.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
    renderer.dispose();
