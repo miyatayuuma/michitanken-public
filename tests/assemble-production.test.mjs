@@ -75,3 +75,15 @@ test('refuses path traversal and symbolic links', async t => {
     /Symbolic link refused/
   );
 });
+
+test('directory updates automatically include new modules but skip nested private files', async t => {
+  const { scratch, publicRoot, privateRoot, manifest } = await setup(t);
+  await write(publicRoot, 'public/assets/next-module.js', 'new optional code');
+  manifest.publicPaths = ['public'];
+  await write(privateRoot, 'production-public-sync.json', JSON.stringify(manifest));
+  const outputRoot = path.join(scratch, 'assembled');
+  await assembleProduction({ publicRoot, privateRoot, outputRoot });
+  assert.equal(await fs.readFile(path.join(outputRoot, 'public/assets/next-module.js'), 'utf8'), 'new optional code');
+  assert.equal(await fs.readFile(path.join(outputRoot, 'public/data/field.json'), 'utf8'), '{"real":true}');
+  assert.equal(await fs.readFile(path.join(outputRoot, 'public/games/catalog.json'), 'utf8'), '{"title":"private production name"}');
+});
