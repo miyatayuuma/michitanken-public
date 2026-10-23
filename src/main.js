@@ -349,7 +349,7 @@ async function init(north,manifest){
    onZoom(ratio){cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));},
    onModeToggle(){changeMode(mode==='walk'?'map':'walk');},
    onMapControl(input,dt){
-     if(mode!=='map')return;
+     if(mode!=='map'||!dt||!Object.values(input).some(Boolean))return;
      const next=mapGamepadStep({
        camera:camera.position.toArray(),target:controls.target.toArray(),
        ...input,dt,minDistance:controls.minDistance,
