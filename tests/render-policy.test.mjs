@@ -81,3 +81,16 @@ test('aborting nine tile overview stops remaining network fetches without corrup
   assert.equal(stream.snapshot().active.length,1);
  }finally{await stream.dispose();}
 });
+
+test('frustum visibility refreshes after camera movement on every render frame',()=>{
+ const source=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
+ const draw=source.slice(source.indexOf('  function draw(){'));
+ const cameraMove=draw.indexOf('controls.update();');
+ const qualityThrottle=draw.indexOf('if(qualityTime>.28){');
+ const visibility=draw.indexOf('updateVisibleTiles();');
+ const render=draw.indexOf('renderer.render(scene,camera);');
+ assert.ok(cameraMove>=0&&cameraMove<visibility,'Frustum update must follow walk/orbit camera movement');
+ assert.ok(qualityThrottle>=0&&qualityThrottle<visibility,'Frustum update must not live in throttled quality block');
+ assert.ok(visibility<render,'Frustum update must precede rendering');
+ assert.equal(draw.split('updateVisibleTiles();').length-1,1,'One unconditional visibility refresh per draw');
+});

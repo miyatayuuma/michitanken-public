@@ -570,11 +570,13 @@ async function init(north,manifest){
    qualityTime+=dt;
    if(qualityTime>.28){
      for(const visual of visuals.values())scheduleDetail(visual,detailFor(visual.entry));
-     updateVisibleTiles();
      qualityTime=0;
    }
    elapsed+=dt;
    for(const visual of visuals.values())if(visual.water)visual.water.uniforms.uTime.value=elapsed;
+   // Frustum visibility must track the camera after every walk or orbit update.
+   // LOD geometry rebuilds remain throttled above.
+   updateVisibleTiles();
    renderer.render(scene,camera);
    frameIndex++;
    frameDurations.push(rawDt*1000);
