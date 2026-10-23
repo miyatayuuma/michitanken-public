@@ -598,6 +598,7 @@ async function init(north,manifest){
        wildlifeCandidates:wildlife?.candidateCount||0,
        levels:[...visuals.values()].map(v=>({id:v.entry.id,level:v.level,visible:v.root.visible}))
      }),
+     wildlifeSpots:()=>wildlife?.candidatePositions||[],
      worldCollision:(x,z)=>collisionReason(world,x,z),
      overviewProjection:()=>{
        const pose=overviewPose(manifest,container.clientWidth/Math.max(1,container.clientHeight),camera.fov);
@@ -684,6 +685,8 @@ async function init(north,manifest){
    if(frameDurations.length>90)frameDurations.shift();
    metricTime+=dt;
    if(metricTime>.8){
+     container.dataset.wildlifeVisible=String(wildlife?.visibleCount||0);
+     container.dataset.wildlifeCandidates=String(wildlife?.candidateCount||0);
      container.dataset.gpuGeometries=String(renderer.info.memory.geometries);
      container.dataset.gpuTextures=String(renderer.info.memory.textures);
      container.dataset.renderCalls=String(renderer.info.render.calls);
