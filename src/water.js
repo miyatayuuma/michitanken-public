@@ -18,7 +18,7 @@ function createBuffer(positions,flows,stations,laterals,shores){
  geom.computeVertexNormals();
  return geom;
 }
-function buildAreaGeometry(field,area,profiles){
+function buildAreaGeometry(field,area,profiles,detail='full'){
  const points=area.footprint;
  if(points.length<3)return null;
  const shape=new THREE.Shape();shape.moveTo(points[0][0],-points[0][1]);
@@ -45,7 +45,7 @@ function buildAreaGeometry(field,area,profiles){
   const points3=[];
   for(let j=0;j<3;j++)points3.push([pos.getX(i+j),pos.getZ(i+j)]);
   const stats=tessellateTriangle(...points3,emit,{
-    maxEdge:WATER_MAX_EDGE_METRES,
+    maxEdge:detail==='overview'?18:WATER_MAX_EDGE_METRES,
     maxTriangles:WATER_MAX_TRIANGLES-triangles
   });
   if(stats.limited)limited=true;
@@ -54,10 +54,10 @@ function buildAreaGeometry(field,area,profiles){
  if(!positions.length)return null;
  return {geometry:createBuffer(positions,flows,stations,laterals,shores),triangles,limited};
 }
-function buildLineGeometry(field,line,profiles){
+function buildLineGeometry(field,line,profiles,detail='full'){
  const [a,b]=line.points,dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz);
  if(len<.01)return null;
- const nx=-dz/len,nz=dx/len,width=Math.max(.5,line.width||2.5),count=Math.max(1,Math.ceil(len/2.3));
+ const nx=-dz/len,nz=dx/len,width=Math.max(.5,line.width||2.5),count=Math.max(1,Math.ceil(len/(detail==='overview'?13:2.3)));
  const positions=[],flows=[],stations=[],laterals=[],shores=[];
  const sample=(t,across)=>{
   const center=[a[0]+dx*t,a[1]+dz*t];
@@ -77,7 +77,8 @@ function buildLineGeometry(field,line,profiles){
  * Water polygon is authoritative for channel width. A matching centreline
  * supplies flow coordinates but is NOT drawn again (prevents duplicate bands).
  */
-export function createWaterLayer(field,{flat=false,sharedProfiles=null}={}){
+export function createWaterLayer(field,{flat=false,sharedProfiles=null,detail='full'}={}){
+ if(detail!=='full'&&detail!=='overview')throw Error('Invalid water LOD');
  const group=new THREE.Group();group.name='mapped-water';
  const paths=buildFlowPaths(field.osm.waterways||[]);
  const profiles=sharedProfiles||fitWaterProfiles(paths,field.terrain);
@@ -89,7 +90,7 @@ export function createWaterLayer(field,{flat=false,sharedProfiles=null}={}){
     depthTest:false,depthWrite:false,side:THREE.DoubleSide,transparent:false
   });
  const areas=field.osm.waterAreas||[];
- const summary={areas:0,ribbons:0,triangles:0,flowPaths:paths.length,limited:false,mode:flat?'flat':'procedural',textureFree:SHADER_TEXTURE_FREE};
+ const summary={areas:0,ribbons:0,triangles:0,flowPaths:paths.length,limited:false,mode:flat?'flat':'procedural',detail,textureFree:SHADER_TEXTURE_FREE};
  const add=(result,label)=>{
   if(!result)return;
   const mesh=new THREE.Mesh(result.geometry,sharedMaterial);
@@ -100,7 +101,7 @@ export function createWaterLayer(field,{flat=false,sharedProfiles=null}={}){
   summary.limited ||=result.limited;
  };
  for(const area of areas){
-  const geometry=buildAreaGeometry(field,area,profiles);
+  const geometry=buildAreaGeometry(field,area,profiles,detail);
   if(!geometry)continue;
   add(geometry,'water-area-'+area.id);summary.areas++;
  }
@@ -109,7 +110,7 @@ export function createWaterLayer(field,{flat=false,sharedProfiles=null}={}){
   // Emit only the unmapped river reaches, never entire ways based on type.
   // In Task④ the south water polygon stops ~100m before the river way ends.
   for(const reach of uncoveredWaterSegments(line,areas)){
-   add(buildLineGeometry(field,reach,profiles),'waterway-'+line.id);
+   add(buildLineGeometry(field,reach,profiles,detail),'waterway-'+line.id);
    summary.ribbons++;
   }
  }

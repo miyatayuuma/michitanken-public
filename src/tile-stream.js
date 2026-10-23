@@ -5,8 +5,13 @@ export function createTileStreamer({manifest,fetchTile,mount,unmount,onChange=()
  validateManifest(manifest);
  const descriptors=new Map(manifest.tiles.map(t=>[t.id,t]));
  const active=new Map(),loading=new Map(),cache=new Map(),errors=new Map();
- let closed=false;
- const publish=()=>onChange({active:[...active.keys()],pending:[...loading.keys()],errors:[...errors.entries()]});
+ let closed=false,lastPublished=null;
+ const publish=()=>{
+  const snapshot={active:[...active.keys()],pending:[...loading.keys()],errors:[...errors.entries()]};
+  const signature=JSON.stringify([snapshot.active,snapshot.pending,snapshot.errors.map(([id,e])=>[id,e.message])]);
+  if(signature===lastPublished)return;
+  lastPublished=signature;onChange(snapshot);
+ };
  const prune=()=>{
   while(cache.size>cacheLimit){
    const discard=[...cache.keys()].find(key=>!active.has(key)&&!loading.has(key));
@@ -35,10 +40,8 @@ export function createTileStreamer({manifest,fetchTile,mount,unmount,onChange=()
   })();
   loading.set(id,run);publish();return run;
  }
- let lastPosition=null;
  function update(x,z,{retainAll=false}={}){
   if(closed)return;
-  lastPosition={x,z};
   const desired=manifest.tiles.filter(tile=>distanceFromRect(x,z,tile,manifest.size)<=PRELOAD_DISTANCE);
   for(const tile of desired){
    if(active.has(tile.id)||loading.has(tile.id))continue;
@@ -57,17 +60,19 @@ export function createTileStreamer({manifest,fetchTile,mount,unmount,onChange=()
   }
   publish();
  }
- async function ensureAll({concurrency=2}={}){
+ async function ensureAll({concurrency=2,signal=null}={}){
+  if(signal?.aborted)throw new DOMException('Aborted','AbortError');
   const entries=[...manifest.tiles];
   let next=0;
   const failed=[];
   const workers=Array.from({length:Math.min(concurrency,entries.length)},async()=>{
-   while(next<entries.length){
+   while(next<entries.length&&!signal?.aborted){
     const entry=entries[next++];
     try{await ensure(entry.id);}catch(e){failed.push({id:entry.id,error:e});}
    }
   });
   await Promise.all(workers);
+  if(signal?.aborted)throw new DOMException('Aborted','AbortError');
   if(failed.length)throw new AggregateError(failed.map(f=>f.error),'Unable to load: '+failed.map(f=>f.id).join(','));
   return [...active.keys()];
  }
