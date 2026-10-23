@@ -14,6 +14,7 @@ import {overviewPose} from '../lib/overview.mjs';
 import {createWideOverview,wideOverviewNeeded} from './wide-overview.js';
 import {pixelRatioBudget,tileDetail,geometryStats,OVERVIEW_ROAD_STEP,FULL_ROAD_STEP} from '../lib/render-policy.mjs';
 import {createVegetationRenderer,natureInstanceBudget} from './vegetation.js';
+import {createWildlifeRenderer} from './wildlife.js';
 import './style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.querySelector('#details');
 let renderer,controls,scene,camera,frame=0;
@@ -151,7 +152,11 @@ async function init(north,manifest){
  const visuals=new Map(),layerVisibility={roads:true,buildings:true};
  const flatWater=new URLSearchParams(location.search).get('water')==='flat';
  const natureEnabled=new URLSearchParams(location.search).get('nature')!=='off';
+ const wildlifeEnabled=natureEnabled&&new URLSearchParams(location.search).get('wildlife')!=='off';
  const natureRenderer=createVegetationRenderer({baseURL:import.meta.env.BASE_URL});
+ const wildlife=wildlifeEnabled?createWildlifeRenderer({
+   scene,baseURL:import.meta.env.BASE_URL,baseElevation:north.terrain.min
+ }):null;
  async function vegetationOverlay(entry){
    if(!natureEnabled)return null;
    const response=await fetch(`${import.meta.env.BASE_URL}data/vegetation/${entry.id}.json`);
@@ -194,6 +199,8 @@ async function init(north,manifest){
    const stats=geometryStats(mounted);
    container.dataset.loadedTiles=[...visuals.keys()].join(',');
    container.dataset.natureInstances=String(mounted.reduce((n,v)=>n+(v.nature?.userData.vegetationCount||0),0));
+   container.dataset.wildlifeCandidates=String(wildlife?.candidateCount||0);
+   container.dataset.wildlifeVisible=String(wildlife?.visibleCount||0);
    container.dataset.waterMaterial=flatWater?'flat':'procedural';
    container.dataset.waterMeshes=String(mounted.reduce((n,v)=>n+(v.water?.group.children.length||0),0));
    container.dataset.waterTriangles=String(stats.waterTriangles);
@@ -297,6 +304,7 @@ async function init(north,manifest){
    try{
      const overlay=await vegetationOverlay(visual.entry);
      if(visual.removed||!overlay)return;
+     wildlife?.register(visual.entry,visual.field,overlay);
      const group=await natureRenderer.build(visual.entry,visual.field,overlay,{maxTotal:natureInstanceBudget({coarsePointer,memoryGiB})});
      if(visual.removed){disposeObject(group);return;}
      if(!group.userData.vegetationCount)return;
@@ -343,6 +351,7 @@ async function init(north,manifest){
  }
  function unmount(entry,visual){
    visual.removed=true;
+   wildlife?.unregister(entry.id);
    visuals.delete(entry.id);
    removeTile(world,entry.id);
    scene.remove(visual.root);disposeObject(visual.root);
@@ -585,6 +594,8 @@ async function init(north,manifest){
        visibleTiles:Number(container.dataset.frustumVisibleTiles||0),
        wideOverview:wideLayer?{tiles:wideLayer.loadedTiles,...wideLayer.budget}:null,
        natureInstances:Number(container.dataset.natureInstances||0),
+       wildlifeVisible:wildlife?.visibleCount||0,
+       wildlifeCandidates:wildlife?.candidateCount||0,
        levels:[...visuals.values()].map(v=>({id:v.entry.id,level:v.level,visible:v.root.visible}))
      }),
      worldCollision:(x,z)=>collisionReason(world,x,z),
@@ -666,6 +677,7 @@ async function init(north,manifest){
    // Frustum visibility must track the camera after every walk or orbit update.
    // LOD geometry rebuilds remain throttled above.
    updateVisibleTiles();
+   wildlife?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
    renderer.render(scene,camera);
    frameIndex++;
    frameDurations.push(rawDt*1000);
@@ -691,6 +703,7 @@ async function init(north,manifest){
    cancelAnimationFrame(frame);observer.disconnect();gameInput.destroy();controls.dispose();
    overviewAbort?.abort();longTaskObserver?.disconnect();
    wideLayer?.dispose();
+   wildlife?.dispose();
    void streamer.dispose();
    natureRenderer.dispose();
    avatar.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
