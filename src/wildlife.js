@@ -122,13 +122,17 @@ export function createWildlifeRenderer({scene,baseURL,baseElevation}){
    const span=bbox.max.y-bbox.min.y;
    if(!Number.isFinite(span)||span<=0)throw Error('Invalid animated model bounds '+item.species);
    const scale=species[item.species].height/span;
-   cloned.scale.multiplyScalar(scale);
-   cloned.position.set(-(bbox.min.x+bbox.max.x)/2*scale,-bbox.min.y*scale,
+   // Normalize outside the animation hierarchy: imported root-keyframe tracks
+   // must not undo the world-scale/grounding transform.
+   const holder=new THREE.Group();
+   holder.scale.setScalar(scale);
+   holder.position.set(-(bbox.min.x+bbox.max.x)/2*scale,-bbox.min.y*scale,
     -(bbox.min.z+bbox.max.z)/2*scale);
+   holder.add(cloned);
    cloned.traverse(obj=>{if(obj.isSkinnedMesh)obj.frustumCulled=false;});
    const group=new THREE.Group();
    group.name='wildlife-'+item.species;
-   group.add(cloned);
+   group.add(holder);
    const mixer=new THREE.AnimationMixer(cloned);
    const clip=gltf.animations.find(a=>a.name==='idle')||gltf.animations[0];
    if(clip)mixer.clipAction(clip).play();
