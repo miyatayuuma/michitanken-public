@@ -44,6 +44,25 @@ try{
  assert.equal(after.wideOverview,null,'Walk mode should release wide atlas');
  assert.ok(after.levels.length<25,'Walking must keep near tiles only');
  assert.deepEqual(errors,[],'No browser JS errors or failed network requests');
+ // The nine-tile production baseline must still use its original full 3D overview.
+ const legacy=await context.newPage();
+ try{
+  const threeByThree={...manifest,tiles:manifest.tiles.filter(
+   t=>Math.abs(t.offset[0])<=500&&Math.abs(t.offset[1])<=500)};
+  await legacy.route('**/data/tiles.json',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(threeByThree)}));
+  await legacy.route(/\\/data\\/tiles\\/t-\\d+-\\d+\\.json/,route=>{
+   const id=route.request().url().split('/').at(-1).replace('.json','');
+   return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(fields.get(id))});
+  });
+  await legacy.goto(origin+'/?test=1',{waitUntil:'domcontentloaded'});
+  await legacy.waitForFunction(()=>document.querySelector('#scene')?.dataset.appReady==='true',null,{timeout:30000});
+  await legacy.locator('#mode').click();
+  await legacy.waitForFunction(()=>document.querySelector('#scene')?.dataset.overviewReady==='true',null,{timeout:60000});
+  const legacyStats=await legacy.evaluate(()=>window.__michiDebug.renderStats());
+  assert.equal(legacyStats.wideOverview,null);
+  assert.equal(legacyStats.levels.length,9,'3x3 should preserve the complete native overview');
+  console.log('Task5C legacy 3x3 browser baseline: PASS');
+ }finally{await legacy.close();}
  console.log(JSON.stringify({status:'PASS',overview:stats.wideOverview,overviewFullTileCount:stats.levels.length,walkTileCount:after.levels.length,gpuGeometries:stats.memory.geometries}));
 }finally{
  await context.close();await browser.close();
