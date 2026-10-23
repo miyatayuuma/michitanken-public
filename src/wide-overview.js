@@ -13,7 +13,8 @@ export function wideOverviewNeeded(manifest){
  return manifest.tiles.length>WIDE_OVERVIEW_THRESHOLD;
 }
 export function terrainCellsPerTile(tileCount){
- if(!Number.isInteger(tileCount)||tileCount<1)throw Error('Invalid tile count');
+ if(!Number.isInteger(tileCount)||tileCount<1||tileCount>WIDE_TERRAIN_CELL_BUDGET/4)
+  throw Error('Invalid or unsupported wide tile count');
  return Math.max(2,Math.floor(Math.sqrt(WIDE_TERRAIN_CELL_BUDGET/tileCount)));
 }
 export function atlasCoordinates(bounds,x,z,size=WIDE_ATLAS_PIXELS){
