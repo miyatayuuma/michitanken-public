@@ -28,9 +28,9 @@ try{
   return field?route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(field)}):route.abort();
  });
  await page.goto(origin+'/?test=1',{waitUntil:'domcontentloaded'});
- await page.waitForFunction(()=>document.querySelector('#scene')?.dataset.appReady==='true',{timeout:30000});
+ await page.waitForFunction(()=>document.querySelector('#scene')?.dataset.appReady==='true',null,{timeout:30000});
  await page.locator('#mode').click();
- await page.waitForFunction(()=>document.querySelector('#scene')?.dataset.overviewReady==='true',{timeout:60000});
+ await page.waitForFunction(()=>document.querySelector('#scene')?.dataset.overviewReady==='true',null,{timeout:60000});
  const stats=await page.evaluate(()=>window.__michiDebug.renderStats());
  assert.equal(stats.wideOverview?.tiles,25,'Wide overview should cover all fictional tiles');
  assert.ok(stats.wideOverview.triangles<=7200);
@@ -39,7 +39,7 @@ try{
  assert.equal(await page.locator('#scene').getAttribute('data-wide-overview-tiles'),'25');
  await page.screenshot({path:'task5c-wide-mobile.png',fullPage:true});
  await page.locator('#mode').click();
- await page.waitForFunction(()=>window.__michiDebug.renderStats().wideOverview===null,{timeout:10000});
+ await page.waitForFunction(()=>window.__michiDebug.renderStats().wideOverview===null,null,{timeout:10000});
  const after=await page.evaluate(()=>window.__michiDebug.renderStats());
  assert.equal(after.wideOverview,null,'Walk mode should release wide atlas');
  assert.ok(after.levels.length<25,'Walking must keep near tiles only');
