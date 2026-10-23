@@ -2,11 +2,19 @@ import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {clone as cloneSkinned} from 'three/addons/utils/SkeletonUtils.js';
 import {terrainMeshHeight} from '../lib/geo.mjs';
+import {waterSurfaceElevationAt} from '../lib/water-field.mjs';
 
 // Kenney Cube Pets bee and Gobkit duck: both CC0, sources recorded in PRIVATE.
 // No simulation of verified wildlife habitat. These are decorative inhabitants.
 const ACTIVE_LIMIT=7,UPDATE_INTERVAL=.12,MAX_DISTANCE=92;
 const species={bee:{height:.40,hover:1.6},duck:{height:.85,hover:0}};
+const WATER_CLEARANCE=.04;
+
+export function wildlifeFootHeight(field,x,z,baseElevation,profiles=[]){
+ const terrain=terrainMeshHeight(field.terrain,x,z);
+ const water=waterSurfaceElevationAt(field,[x,z],profiles);
+ return Math.max(terrain,water===null?-Infinity:water+WATER_CLEARANCE)-baseElevation;
+}
 const hash=s=>{
  let h=2166136261;
  for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
@@ -81,7 +89,7 @@ export function wildlifeCandidates(entry,field,overlay){
 
 /** Near-field only; no artificial physics, expensive AI, or 25-tile fauna atlas. */
 export function createWildlifeRenderer({scene,baseURL,baseElevation}){
- const loader=new GLTFLoader(),models=new Map(),tiles=new Map(),live=new Map(),pending=new Set();
+ const loader=new GLTFLoader(),models=new Map(),tiles=new Map(),waterProfiles=new Map(),live=new Map(),pending=new Set();
  let elapsed=0,closed=false,mode='walk',player={x:0,z:0},visibleCount=0;
  const locate=item=>({
   x:item.entry.offset[0]+item.x,
@@ -94,11 +102,11 @@ export function createWildlifeRenderer({scene,baseURL,baseElevation}){
  function register(entry,field,overlay){
   if(closed)return;
   const candidates=wildlifeCandidates(entry,field,overlay).map(item=>({
-   ...item,entry,field,key:entry.id+':'+item.id,
-   y:terrainMeshHeight(field.terrain,item.x,item.z)-baseElevation
+   ...item,entry,field,key:entry.id+':'+item.id
   }));
   tiles.set(entry.id,candidates);
  }
+ function setWaterProfiles(tileId,profiles){waterProfiles.set(tileId,profiles);}
  function stop(key){
   const value=live.get(key);
   if(!value)return;
@@ -108,6 +116,7 @@ export function createWildlifeRenderer({scene,baseURL,baseElevation}){
  }
  function unregister(tileId){
   tiles.delete(tileId);
+  waterProfiles.delete(tileId);
   for(const [key,value] of [...live])if(value.item.entry.id===tileId)stop(key);
  }
  async function start(item){
@@ -130,7 +139,11 @@ export function createWildlifeRenderer({scene,baseURL,baseElevation}){
    holder.position.set(-(bbox.min.x+bbox.max.x)/2*scale,-bbox.min.y*scale,
     -(bbox.min.z+bbox.max.z)/2*scale);
    holder.add(cloned);
-   cloned.traverse(obj=>{if(obj.isSkinnedMesh)obj.frustumCulled=false;});
+   cloned.traverse(obj=>{
+    if(obj.isSkinnedMesh)obj.frustumCulled=false;
+    // Water draws without depth testing at renderOrder 1. Fauna must draw later.
+    if(obj.isMesh)obj.renderOrder=2;
+   });
    const group=new THREE.Group();
    group.name='wildlife-'+item.species;
    group.add(holder);
@@ -166,9 +179,14 @@ export function createWildlifeRenderer({scene,baseURL,baseElevation}){
    v.time+=step;
    const t=v.time+v.item.phase,base=locate(v.item);
    const bee=v.item.species==='bee',height=species[v.item.species].hover;
-   v.group.position.set(base.x+Math.cos(t*(bee?1.7:.7))*(bee?1.15:.55),
-      v.item.y+height+(bee?Math.sin(t*3)*.23:0),
-      base.z+Math.sin(t*(bee?1.5:.7))*(bee?1.05:.55));
+   const x=base.x+Math.cos(t*(bee?1.7:.7))*(bee?1.15:.55);
+   const z=base.z+Math.sin(t*(bee?1.5:.7))*(bee?1.05:.55);
+   const localX=x-v.item.entry.offset[0],localZ=z-v.item.entry.offset[1];
+   const foot=bee
+    ?terrainMeshHeight(v.item.field.terrain,localX,localZ)-baseElevation
+    :wildlifeFootHeight(v.item.field,localX,localZ,baseElevation,
+       waterProfiles.get(v.item.entry.id)||[]);
+   v.group.position.set(x,foot+height+(bee?Math.sin(t*3)*.23:0),z);
    v.group.rotation.y=t*(bee?.3:.12);
    if(v.clip?.name==='clip'){
     // Gobkit duck: baked animation's walk segment = 90..119 frames at 24 fps.
@@ -180,7 +198,7 @@ export function createWildlifeRenderer({scene,baseURL,baseElevation}){
  function dispose(){
   closed=true;
   for(const key of [...live.keys()])stop(key);
-  tiles.clear();pending.clear();
+  tiles.clear();waterProfiles.clear();pending.clear();
   for(const promise of models.values())promise.then(gltf=>{
    const mats=new Set(),geoms=new Set();
    gltf.scene.traverse(o=>{if(o.geometry)geoms.add(o.geometry);if(o.material)
@@ -190,7 +208,7 @@ export function createWildlifeRenderer({scene,baseURL,baseElevation}){
   }).catch(()=>{});
   models.clear();
  }
- return {register,unregister,update,dispose,get visibleCount(){return visibleCount;},
+ return {register,unregister,setWaterProfiles,update,dispose,get visibleCount(){return visibleCount;},
   get candidateCount(){return [...tiles.values()].reduce((a,b)=>a+b.length,0);},
   get candidatePositions(){return [...tiles.values()].flat().map(item=>({
    species:item.species,x:locate(item).x,z:locate(item).z

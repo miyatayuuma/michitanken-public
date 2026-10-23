@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {wildlifeCandidates,createWildlifeRenderer} from '../src/wildlife.js';
+import {wildlifeCandidates,createWildlifeRenderer,wildlifeFootHeight} from '../src/wildlife.js';
 
 const entry={id:'fictional-river-bank',offset:[0,0]};
 const field={size:500,terrain:{size:500,count:2,elevations:[0,0,0,0],min:0,max:0},osm:{
@@ -50,4 +50,21 @@ test('Task6 tracked candidate resources are released on tile unload and map mode
  renderer.unregister(entry.id);
  assert.equal(renderer.candidateCount,0);
  renderer.dispose();
+});
+
+test('Task6 ducks follow the waterline without floating above dry banks',()=>{
+ const profile={nodes:[[-90,0],[90,0]],lengths:[0,180],length:180,
+  getHeight:s=>3+s/180,reverseFlow:false};
+ const sample={size:500,terrain:{size:500,count:2,elevations:[0,0,0,0],min:0,max:0},osm:{
+  waterAreas:[],waterways:[{id:1,width:4,layer:0,tunnel:false,points:[[-90,0],[90,0]]}]
+ }};
+ const foot=(x,z)=>wildlifeFootHeight(sample,x,z,0,[profile]);
+ assert.ok(Math.abs(foot(-45,0)-(3.25+.18+.04))<.0001);
+ assert.ok(Math.abs(foot(45,0)-(3.75+.18+.04))<.0001);
+ assert.equal(foot(0,4),0,'dry bank should stay on terrain');
+ const covered={...sample,osm:{waterways:[],waterAreas:[
+  {id:2,footprint:[[-10,-6],[10,-6],[10,6],[-10,6]]}
+ ]}};
+ assert.ok(wildlifeFootHeight(covered,0,0,0,[profile])>3);
+ assert.equal(wildlifeFootHeight(covered,0,10,0,[profile]),0);
 });

@@ -230,6 +230,7 @@ async function init(north,manifest){
    next.uniforms.uMotion.value=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches?0:1;
    if(visual.water){visual.root.remove(visual.water.group);disposeObject(visual.water.group);}
    visual.water=next;
+   wildlife?.setWaterProfiles(visual.entry.id,next.profiles);
    visual.root.add(next.group);
  }
  /** Refit only rivers sharing an OSM way with an acquired or removed tile. */
