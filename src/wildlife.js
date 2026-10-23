@@ -190,5 +190,8 @@ export function createWildlifeRenderer({scene,baseURL,baseElevation}){
   models.clear();
  }
  return {register,unregister,update,dispose,get visibleCount(){return visibleCount;},
-  get candidateCount(){return [...tiles.values()].reduce((a,b)=>a+b.length,0);}};
+  get candidateCount(){return [...tiles.values()].reduce((a,b)=>a+b.length,0);},
+  get candidatePositions(){return [...tiles.values()].flat().map(item=>({
+   species:item.species,x:locate(item).x,z:locate(item).z
+  }));}};
 }
