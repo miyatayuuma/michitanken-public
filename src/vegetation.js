@@ -4,11 +4,11 @@ import {terrainMeshHeight} from '../lib/geo.mjs';
 
 // Kenney Nature Kit 2.1, CC0. Models are hosted by the PRIVATE game site.
 const SPEC={
- tree:{models:['tree_oak','tree_default','tree_pineDefaultA'],height:[5,9],limit:80},
- bush:{models:['plant_bush'],height:[.8,1.7],limit:60},
- grass:{models:['grass'],height:[.4,.9],limit:115},
- flower:{models:['flower_yellowA'],height:[.35,.8],limit:24},
- rock:{models:['rock_smallA'],height:[.45,1],limit:18}
+ tree:{models:['tree_oak','tree_default','tree_pineDefaultA'],height:[5,9],limit:100},
+ bush:{models:['plant_bush'],height:[.6,1.8],limit:180},
+ grass:{models:['grass'],height:[.35,1.15],limit:310},
+ flower:{models:['flower_yellowA'],height:[.35,.8],limit:65},
+ rock:{models:['rock_smallA'],height:[.45,1],limit:22}
 };
 function hash(seed){
  let h=2166136261;
@@ -50,29 +50,33 @@ function kindForArea(tag,roll){
  if(tag==='park')return roll<.44?'tree':roll<.65?'bush':roll<.90?'grass':roll<.97?'flower':'rock';
  return null;
 }
-/** World-anchored deterministic sampling; no placements without mapped green cover. */
-export function sampleVegetation(entry,field,overlay,{maxTotal=260}={}){
+/** Deterministic candidate ranking scatters foliage across the *whole* green polygon.
+ * The previous row-major cap left the second half of large forests bare.
+ * Mesh density is controlled by a per-device instance budget, not draw calls.
+ */
+export function sampleVegetation(entry,field,overlay,{maxTotal=540}={}){
  if(overlay?.schema!==1||overlay.tileId!==entry.id||!Array.isArray(overlay.areas))return [];
- const out=[],used={tree:0,bush:0,grass:0,flower:0,rock:0};
+ if(!Number.isInteger(maxTotal)||maxTotal<0||maxTotal>900)throw Error('Invalid nature instance budget');
+ const out=[],used={tree:0,bush:0,grass:0,flower:0,rock:0},candidates=[];
+ // Keep explicit tagged trees ahead of vegetation inferred from land cover.
  const add=(kind,x,z,seed)=>{
   if(!SPEC[kind]||used[kind]>=SPEC[kind].limit||out.length>=maxTotal||
      Math.abs(x)>=field.size/2-.5||Math.abs(z)>=field.size/2-.5||occupied(x,z,field))return;
-  // Overlapping OSM landuse polygons must not stack identical trunks/props.
-  const spacing=kind==='tree'?9:kind==='bush'?3:1.5;
+  const spacing=kind==='tree'?8:kind==='bush'?2.6:1.25;
   if(out.some(p=>p.kind===kind&&Math.hypot(p.x-x,p.z-z)<spacing))return;
-  const pick=hash(seed+':model'),shape=SPEC[kind];
-  const model=shape.models[Math.floor(pick*shape.models.length)];
+  const shape=SPEC[kind];
+  const model=shape.models[Math.floor(hash(seed+':model')*shape.models.length)];
   const height=shape.height[0]+hash(seed+':height')*(shape.height[1]-shape.height[0]);
   out.push({kind,model,x,z,height,yaw:hash(seed+':angle')*Math.PI*2});
   used[kind]++;
  };
- // Explicit OSM natural=tree nodes take priority over procedural woodland density.
  for(const tree of (overlay.trees||[]).slice(0,200)){
   if(!Array.isArray(tree)||tree.length!==2||!tree.every(Number.isFinite))continue;
-  const seed=entry.id+':osm-tree:'+tree.join(':');
-  add('tree',tree[0],tree[1],seed);
+  add('tree',tree[0],tree[1],entry.id+':osm-tree:'+tree.join(':'));
  }
- for(const area of overlay.areas.slice(0,500)){
+ if(out.length>=maxTotal)return out;
+ const areas=overlay.areas.slice(0,500);
+ for(const area of areas){
   if(!Array.isArray(area.ring)||area.ring.length<3||area.ring.length>5000)continue;
   const ring=area.ring;
   if(!ring.every(p=>Array.isArray(p)&&p.length===2&&p.every(Number.isFinite)))continue;
@@ -80,20 +84,47 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=260}={}){
    maxX=Math.min(field.size/2,Math.max(...ring.map(p=>p[0]))),
    minZ=Math.max(-field.size/2,Math.min(...ring.map(p=>p[1]))),
    maxZ=Math.min(field.size/2,Math.max(...ring.map(p=>p[1])));
-  const step=area.kind==='wood'?18:area.kind==='scrub'?18:area.kind==='grass'?14:24;
-  // Candidate grid anchored to world rather than tile: no random edge clustering.
-  const xmin=Math.ceil((minX+entry.offset[0])/step),xmax=Math.floor((maxX+entry.offset[0])/step);
-  const zmin=Math.ceil((minZ+entry.offset[1])/step),zmax=Math.floor((maxZ+entry.offset[1])/step);
-  for(let gx=xmin;gx<=xmax;gx++)for(let gz=zmin;gz<=zmax;gz++){
-   const seed=area.id+':'+gx+':'+gz;
-   const x=gx*step-entry.offset[0]+(hash(seed+':dx')-.5)*step*.55;
-   const z=gz*step-entry.offset[1]+(hash(seed+':dz')-.5)*step*.55;
-   if(!inside(x,z,ring)||hash(seed+':density')>.60)continue;
-   const kind=kindForArea(area.kind,hash(seed+':kind'));
-   if(kind)add(kind,x,z,seed);
+  if(maxX-minX<1||maxZ-minZ<1)continue;
+  // Two passes: preserve standing trees, then carpet their gaps with small plants.
+  for(const layer of ['canopy','understory']){
+   const step=layer==='canopy'?(area.kind==='wood'?13:area.kind==='park'?18:20):
+       area.kind==='wood'?5.5:area.kind==='grass'?5.5:area.kind==='scrub'?7:8;
+   const chance=layer==='canopy'?.66:.75;
+   const xmin=Math.ceil((minX+entry.offset[0])/step),
+    xmax=Math.floor((maxX+entry.offset[0])/step),
+    zmin=Math.ceil((minZ+entry.offset[1])/step),
+    zmax=Math.floor((maxZ+entry.offset[1])/step);
+   // Per-area candidate work bound protects unusual malformed/oversized OSM polygons.
+   let collected=0;
+   for(let gx=xmin;gx<=xmax&&collected<2600;gx++)for(let gz=zmin;gz<=zmax&&collected<2600;gz++){
+    const seed=area.id+':'+layer+':'+gx+':'+gz;
+    if(hash(seed+':density')>chance)continue;
+    const x=gx*step-entry.offset[0]+(hash(seed+':dx')-.5)*step*.62;
+    const z=gz*step-entry.offset[1]+(hash(seed+':dz')-.5)*step*.62;
+    if(!inside(x,z,ring))continue;
+    let kind;
+    if(layer==='understory'){
+     const r=hash(seed+':kind');
+     kind=area.kind==='wood'?(r<.65?'grass':r<.96?'bush':'flower'):
+       area.kind==='scrub'?(r<.72?'bush':'grass'):
+       area.kind==='grass'?(r<.85?'grass':'flower'):
+       (r<.68?'grass':r<.92?'bush':'flower');
+    }else{
+     kind=kindForArea(area.kind,hash(seed+':kind'));
+     if(layer==='canopy'&&kind==='grass')continue; // grass belongs in understory
+    }
+    if(!SPEC[kind])continue;
+    candidates.push({kind,x,z,seed,priority:hash(seed+':priority')});
+    collected++;
+   }
   }
  }
-
+ // Local deterministic hash order avoids systematic empty map corners.
+ candidates.sort((a,b)=>a.priority-b.priority||a.seed.localeCompare(b.seed));
+ for(const item of candidates){
+  if(out.length>=maxTotal)break;
+  add(item.kind,item.x,item.z,item.seed);
+ }
  return out;
 }
 
@@ -113,8 +144,8 @@ export function createVegetationRenderer({baseURL}){
   }));
   return templates.get(name);
  }
- async function build(entry,field,overlay){
-  const placement=sampleVegetation(entry,field,overlay);
+ async function build(entry,field,overlay,options={}){
+  const placement=sampleVegetation(entry,field,overlay,options);
   const group=new THREE.Group();group.name='mapped-vegetation-'+entry.id;
   const groups=new Map();
   for(const item of placement){
