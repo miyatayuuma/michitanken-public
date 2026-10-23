@@ -50,7 +50,7 @@ try{
   const threeByThree={...manifest,tiles:manifest.tiles.filter(
    t=>Math.abs(t.offset[0])<=500&&Math.abs(t.offset[1])<=500)};
   await legacy.route('**/data/tiles.json',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(threeByThree)}));
-  await legacy.route(/\\/data\\/tiles\\/t-\\d+-\\d+\\.json/,route=>{
+  await legacy.route(/\/data\/tiles\/t-\d+-\d+\.json/,route=>{
    const id=route.request().url().split('/').at(-1).replace('.json','');
    return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(fields.get(id))});
   });
