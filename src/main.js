@@ -469,7 +469,11 @@ async function init(north,manifest){
        const builder=createWideOverview(manifest,world.baseElevation);
        await streamer.scanAll({concurrency:2,signal,onTile:async(entry,field)=>{
          if(signal.aborted)return;
-         builder.addTile(entry,field,await vegetationOverlay(entry));
+         const foliage=await vegetationOverlay(entry).catch(error=>{
+           console.warn('Skipping optional map foliage:',entry.id,error);
+           return null;
+         });
+         builder.addTile(entry,field,foliage);
          await nextFrame();
        }});
        if(signal.aborted)return;
