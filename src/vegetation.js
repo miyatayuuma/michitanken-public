@@ -44,10 +44,10 @@ function occupied(x,z,field){
  return false;
 }
 function kindForArea(tag,roll){
- if(tag==='wood')return roll<.74?'tree':roll<.92?'bush':'grass';
- if(tag==='scrub')return roll<.75?'bush':'grass';
- if(tag==='grass')return roll<.77?'grass':roll<.92?'flower':'bush';
- if(tag==='park')return roll<.45?'tree':roll<.69?'bush':roll<.94?'grass':'flower';
+ if(tag==='wood')return roll<.72?'tree':roll<.90?'bush':roll<.97?'grass':'rock';
+ if(tag==='scrub')return roll<.72?'bush':roll<.95?'grass':'rock';
+ if(tag==='grass')return roll<.74?'grass':roll<.90?'flower':roll<.97?'bush':'rock';
+ if(tag==='park')return roll<.44?'tree':roll<.65?'bush':roll<.90?'grass':roll<.97?'flower':'rock';
  return null;
 }
 /** World-anchored deterministic sampling; no placements without mapped green cover. */
