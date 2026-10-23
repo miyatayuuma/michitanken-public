@@ -88,7 +88,7 @@ export function createWideOverview(manifest,baseElevation){
   // vegetation is painted before mapped blue water, without a fourth texture.
   if(vegetation?.schema===1&&vegetation.tileId===entry.id)
    for(const area of vegetation.areas||[]){
-    const colors={wood:'#487e54',scrub:'#6c9060',grass:'#8db777',park:'#77a66b'};
+    const colors={wood:'#487e54',grove:'#487e54',canopy:'#487e54',shrub:'#6c9060',scrub:'#6c9060',grass:'#8db777',park:'#77a66b'};
     if(colors[area.kind]&&area.ring?.length>=3)
      paintPath(sheets.water,entry,area.ring,{color:colors[area.kind],fill:true});
    }
