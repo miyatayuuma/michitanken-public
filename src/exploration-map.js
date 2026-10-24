@@ -15,6 +15,8 @@ export async function createExplorationMap({container,registry,baseURL,onDiscove
  for(const a of data.areas){g.beginPath();ring(a.ring);for(const h of a.holes||[])ring(h);g.fillStyle={wood:'#a1b282',green:'#c2ce93',water:'#8ebfc3'}[a.kind];g.fill('evenodd');}
  for(const kind of ['river','road'])for(const l of data.lines.filter(l=>l.kind===kind)){g.beginPath();l.points.forEach((p,i)=>{const [x,y]=project(p);i?g.lineTo(x,y):g.moveTo(x,y);});g.lineWidth=Math.max(kind==='river'?2:1,(l.width||4)*1000/(b.maxX-b.minX));g.strokeStyle=kind==='river'?'#7bb2bd':'#faf2dc';g.lineCap='round';g.stroke();}
  for(const [k,url] of Object.entries(MAP_ICONS)){const im=new Image();im.src=url;images[k]=im;}
+ // The raster owns visual detail now. Retain only compact biome cells, not parsed map geometry.
+ const mapBytes=JSON.stringify(data).length;data.lines.length=0;data.areas.length=0;
  let open=false,px=0,pz=0,cursor={x:.5,y:.5},selected=null,changed=true,flushElapsed=0,closed=false,frame=0,drawMs=0;
  const pulses=new Map();let w=1,h=1,side=1,left=0,top=0;
  function layout(){w=panel.clientWidth;h=panel.clientHeight;const dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;canvas.style.width=w+'px';canvas.style.height=h+'px';ctx.setTransform(dpr,0,0,dpr,0,0);side=Math.min(w-28,h-74);left=(w-side)/2;top=Math.max(10,(h-54-side)/2);label.style.top=(top+side+12)+'px';label.style.bottom='auto';}
@@ -33,5 +35,5 @@ export async function createExplorationMap({container,registry,baseURL,onDiscove
  update(x,z,dt,walking=true){if(closed)return;px=x;pz=z;if(walking){changed=store.reveal(x,z)||changed;for(const p of registry.points)if(Math.hypot(p.position[0]-x,p.position[2]-z)<=75&&store.discover(p.id)){pulses.set(p.id,performance.now());onDiscover(p);}}flushElapsed+=dt;if(flushElapsed>1){store.flush();flushElapsed=0;}},
  isFound:id=>store.has(id),pulse:id=>{const t=pulses.get(id);if(t===undefined)return 0;const elapsed=performance.now()-t;if(elapsed>1600){pulses.delete(id);return 0;}return 1-elapsed/1600;},
  biomeAt(x,z){const v=data.biomes,c=Math.floor((x-b.minX)/v.step),r=Math.floor((z-b.minZ)/v.step);return ['urban','grassland','woodland','waterside'][c>=0&&c<v.cols&&r>=0&&r<v.rows?+v.cells[r*v.cols+c]:0];},
- snapshot:()=>({...store.snapshot(),open,selected,cursor:{...cursor},drawMs,canvasPixels:canvas.width*canvas.height,basePixels:1000000,mapBytes:JSON.stringify(data).length,warpEnabled:false}),dispose(){closed=true;store.flush();cancelAnimationFrame(frame);observer.disconnect();panel.remove();base.width=base.height=fog.width=fog.height=0;}};
+ snapshot:()=>({...store.snapshot(),open,selected,cursor:{...cursor},drawMs,canvasPixels:canvas.width*canvas.height,basePixels:1000000,mapBytes,warpEnabled:false}),dispose(){closed=true;store.flush();cancelAnimationFrame(frame);observer.disconnect();panel.remove();base.width=base.height=fog.width=fog.height=0;}};
 }
