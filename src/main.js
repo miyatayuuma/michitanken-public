@@ -1,3 +1,4 @@
+import {setupCompass} from './compass.js';
 import {setupNotebook,icon,iconButton} from './notebook-ui.js';
 import {compassBearing,unwrapAngle} from '../lib/map-view.mjs';
 import {createWarpRegistry,canWarp,requiredLandingTiles,validateLanding,createWarpController} from '../lib/warp.mjs';
@@ -571,6 +572,7 @@ async function init(north,manifest){
      tick:()=>streamer.update(playerState.x,playerState.z)
    };
  }
+ const compass=setupCompass(document.querySelector('.compass'));
  const compassVector=new THREE.Vector3();let compassAngle=0;
  function draw(){
    frame=requestAnimationFrame(draw);
@@ -601,7 +603,7 @@ async function init(north,manifest){
    // LOD geometry rebuilds remain throttled above.
    updateVisibleTiles();
    playerSprite?.update({state:playerState,camera,walking:mode==='walk'});
-   const direction=camera.getWorldDirection(compassVector);const bearing=unwrapAngle(compassBearing(direction.x,direction.z,compassAngle),compassAngle);compassAngle=bearing;document.querySelector('.north-needle').style.transform=`rotate(${-bearing}rad)`;
+   const direction=camera.getWorldDirection(compassVector);const bearing=unwrapAngle(compassBearing(direction.x,direction.z,compassAngle),compassAngle);compassAngle=bearing;compass.update(bearing);
    landmarkFX.update(dt);
    map2d?.update(playerState.x,playerState.z,dt,mode==='walk');
    sound.update(map2d?.biomeAt(playerState.x,playerState.z)||'urban',dt);
