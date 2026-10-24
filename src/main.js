@@ -1,21 +1,19 @@
+import {createLandmarkFX} from './landmark-fx.js';
+import {createExplorationMap} from './exploration-map.js';
+import {createMichiSound} from './sound.js';
 import {createBiomeDebug} from './biome-debug.js';
 import {loadPoiRegistry,createPoiMarkers} from './poi-markers.js';
 import {addBuildings} from './buildings.js';
 import * as THREE from 'three';
-import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {gridSample} from '../lib/geo.mjs';
 import {buildRoadRibbon} from '../lib/road-surface.mjs';
 import {validateField} from '../lib/field.mjs';
 import {createCollisionWorld,chooseSpawn,advancePlayer,terrainHeight,blocked,collisionReason} from '../lib/navigation.mjs';
 import {createGameInput} from './controls.js';
-import {mapGamepadStep} from '../lib/gamepad.mjs';
 import {createWaterLayer} from './water.js';
-import {pointOnPath} from '../lib/water-field.mjs';
 import {validateManifest,createTiledWorld,registerTile,removeTile,tileAtPosition,distanceFromRect,PRELOAD_DISTANCE} from '../lib/tiles.mjs';
 import {createTileStreamer} from './tile-stream.js';
 import {fitGlobalWaterProfiles,profilesInLocalSpace} from '../lib/tile-water.mjs';
-import {overviewPose} from '../lib/overview.mjs';
-import {createWideOverview,wideOverviewNeeded} from './wide-overview.js';
 import {pixelRatioBudget,tileDetail,geometryStats,OVERVIEW_ROAD_STEP,FULL_ROAD_STEP} from '../lib/render-policy.mjs';
 import {createVegetationRenderer,natureInstanceBudget} from './vegetation.js';
 import {createWildlifeRenderer} from './wildlife.js';
@@ -144,7 +142,7 @@ async function init(north,manifest){
  const natureEnabled=new URLSearchParams(location.search).get('nature')!=='off';
  const wildlifeEnabled=natureEnabled&&new URLSearchParams(location.search).get('wildlife')!=='off';
  const natureRenderer=createVegetationRenderer({baseURL:import.meta.env.BASE_URL});
- const exploration=new URLSearchParams(location.search).get('exploration')==='off'?null:createExploration({scene,container,baseURL:import.meta.env.BASE_URL,baseElevation:north.terrain.min,ground:(x,z)=>terrainHeight(world,x,z),low:memoryGiB!==null&&memoryGiB<=2});
+ const exploration=new URLSearchParams(location.search).get('exploration')==='off'?null:createExploration({scene,container,baseURL:import.meta.env.BASE_URL,baseElevation:north.terrain.min,ground:(x,z)=>terrainHeight(world,x,z),onCollect:()=>sound.se('collect'),low:memoryGiB!==null&&memoryGiB<=2});
  const wildlife=wildlifeEnabled?createWildlifeRenderer({
    scene,baseURL:import.meta.env.BASE_URL,baseElevation:north.terrain.min,onDiscover:type=>exploration?.discover(type)
  }):null;
@@ -166,8 +164,11 @@ async function init(north,manifest){
    }
    return data;
  }
- const wideMap=wideOverviewNeeded(manifest);
- let wideLayer=null;
+ const wideMap=false;
+ const wideLayer=null;
+ let map2d=null;
+ const landmarkFX=createLandmarkFX(scene,north.terrain.min);
+ const sound=createMichiSound();
  let elapsed=0,streamer=null,playerState=null,mode='walk';
  const disposeObject=object=>{
    const materials=new Set(),geometries=new Set();
@@ -182,7 +183,7 @@ async function init(north,manifest){
  const nextFrame=()=>new Promise(resolve=>requestAnimationFrame(resolve));
  let lodQueue=Promise.resolve();
  const detailFor=entry=>tileDetail({
-   mode,x:playerState?.x??0,z:playerState?.z??0,entry,size:manifest.size,
+   mode:'walk',x:playerState?.x??0,z:playerState?.z??0,entry,size:manifest.size,
    camera:mode==='map'?camera.position:null
  });
  function updateLayerMetrics(){
@@ -238,8 +239,8 @@ async function init(north,manifest){
  }
  function syncRoadDepth(layers){
    for(const road of layers.roads.children){
-     road.material.depthTest=mode!=='map';
-     road.material.depthWrite=mode!=='map';
+     road.material.depthTest=true;
+     road.material.depthWrite=true;
      road.material.needsUpdate=true;
    }
  }
@@ -290,6 +291,7 @@ async function init(north,manifest){
      ?'3Dフィールドを準備中 · 読込 '+visible+'/'+manifest.tiles.length
      :prefix+progressLabel+' · '+current+progress+error;
    status.classList.toggle('failed',!!snapshot.errors.length);
+   status.hidden=container.dataset.appReady!=='false'&&!snapshot.errors.length;
  }
  async function mountVegetation(visual){
    if(!natureEnabled)return;
@@ -372,7 +374,7 @@ async function init(north,manifest){
  const playerSprite=await loadPlayerSprite({baseURL:import.meta.env.BASE_URL});
  const avatar=playerSprite?.group||makeAvatar();avatar.traverse(o=>{if(o.isMesh)o.renderOrder=4;});scene.add(avatar);
  container.dataset.avatarKind=playerSprite?'sprite':'model';
- const controls=new OrbitControls(camera,renderer.domElement);
+ const controls={target:new THREE.Vector3(),update(){},dispose(){}};
  controls.enableDamping=true;controls.dampingFactor=.07;
  controls.maxPolarAngle=Math.PI/2.05;controls.minDistance=15;controls.maxDistance=9000;
  controls.screenSpacePanning=true;controls.enabled=false;
@@ -383,21 +385,15 @@ async function init(north,manifest){
  const gameInput=createGameInput({
    canvas:renderer.domElement,joystick:document.querySelector('#joystick'),
    knob:document.querySelector('#joystick-knob'),runButton:document.querySelector('#run'),
-   isActive:()=>mode==='walk'&&!exploration?.journalOpen,
+   isActive:()=>mode==='walk',
    onLook(dx,dy){cameraYaw+=dx;cameraPitch=Math.min(1.1,Math.max(.2,cameraPitch+dy));},
    onZoom(ratio){cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));},
-   onModeToggle(){if(!exploration?.journalOpen)changeMode(mode==='walk'?'map':'walk');},
-   onInteract(){exploration?.collect();},onJournal(){exploration?.toggleJournal();},onBack(){if(exploration?.journalOpen)exploration.toggleJournal(false);},
-   onMapControl(input,dt){
-     if(mode!=='map'||!dt||!Object.values(input).some(Boolean))return;
-     const next=mapGamepadStep({
-       camera:camera.position.toArray(),target:controls.target.toArray(),
-       ...input,dt,minDistance:controls.minDistance,
-       maxDistance:controls.maxDistance,maxPolarAngle:controls.maxPolarAngle
-     });
-     controls.target.set(...next.target);
-     camera.position.set(...next.camera);
-   }
+   onModeToggle(){changeMode(mode==='walk'?'map':'walk');},
+   onInteract(){sound.activate();if(mode==='map')map2d?.select();else exploration?.collect();},
+   onBack(){if(mode==='map')changeMode('walk');},
+   onActivity(){sound.activate();},
+   onMapControl(input,dt){if(mode==='map')map2d?.move(input,dt);}
+
  });
  let footCache=null;
  const avatarPosition=()=>{
@@ -431,25 +427,7 @@ async function init(north,manifest){
    camera.position.lerp(desired,factor);
    controls.target.lerp(target,factor);camera.lookAt(controls.target);
  }
- const mapTarget=new THREE.Vector3();
- let overviewSequence=0,overviewAbort=null;
  container.dataset.overviewReady='false';
- function resetMap(){
-   const focusRiver=new URLSearchParams(location.search).get('view')==='river';
-   const visual=visuals.get('north');
-   if(focusRiver&&visual?.water?.profiles.length){
-     const path=visual.water.profiles[0],point=pointOnPath(path,path.length*.54);
-     const y=path.getHeight(path.length*.54)-world.baseElevation;
-     controls.target.set(point[0]+visual.entry.offset[0],y+1.3,point[1]+visual.entry.offset[1]);
-     camera.position.set(controls.target.x+41,y+39,controls.target.z+57);
-   }else{
-     const pose=overviewPose(manifest,container.clientWidth/Math.max(1,container.clientHeight),camera.fov,(north.terrain.max-north.terrain.min)/2);
-     mapTarget.set(...pose.target);
-     controls.target.copy(mapTarget);camera.position.set(...pose.position);
-     container.dataset.overviewExtent=pose.dimensions.join('x');
-   }
-   controls.update();
- }
  function updateHud(){
    const owner=tileAtPosition(manifest,playerState.x,playerState.z);
    coords.dataset.x=playerState.x.toFixed(3);
@@ -458,7 +436,7 @@ async function init(north,manifest){
    coords.dataset.tile=owner?.id||'outside';
    const labels={building:'建物',railway:'線路',waterway:'水路','water-area':'水域',boundary:'マップ境界',loading:'エリア読込待ち'};
    const contact=playerState.collided?` · ${labels[playerState.collision]||'障害物'}に接触`:'';
-   coords.textContent=`位置 X ${playerState.x.toFixed(1)}m / Z ${playerState.z.toFixed(1)}m · エリア ${owner?.id||'外'} · 標高 ${(playerState.y+world.baseElevation).toFixed(1)}m${contact}`;
+   coords.textContent='';
  }
  function resetWalk(){
    playerSprite?.reset();
@@ -467,82 +445,20 @@ async function init(north,manifest){
    avatarPosition();followCamera(0,true);updateHud();streamer.update(playerState.x,playerState.z);
  }
  function changeMode(next){
-   mode=next;controls.enabled=next==='map';
-   // Fog was originally tuned for the 500m walking view (far=1150m).
-   // Full map camera sits ~1200m above the ground: without extending the
-   // fog plane, the new southern tile becomes invisible behind fog.
-   scene.fog.near=next==='map'?1500:500;
-   scene.fog.far=next==='map'?11000:1150;
-   if(overviewAbort){overviewAbort.abort();overviewAbort=null;}
-   // Do not keep atlas textures resident while the player is walking.
-   if(next==='walk'&&wideLayer){wideLayer.dispose();wideLayer=null;updateLayerMetrics();}
-   else if(wideLayer)wideLayer.group.visible=true;
-   for(const visual of visuals.values()){
-     visual.layers.outline.visible=next==='map';
-     syncRoadDepth(visual.layers);
-     scheduleDetail(visual,detailFor(visual.entry));
-   }
+   if(next==='map'&&!map2d)return;
+   mode=next;controls.enabled=false;gameInput.reset();accumulator=0;
    document.querySelector('#app').dataset.mode=mode;
-   modeButton.textContent=next==='walk'?'俯瞰':'歩く';
-   document.querySelector('#reset').textContent=next==='walk'?'位置を戻す':'全域表示';
-   modeButton.setAttribute('aria-label',next==='walk'?'俯瞰モードに切り替える':'歩行モードに切り替える');
-   modeButton.classList.toggle('selected',next==='walk');
-   hint.textContent=next==='walk'?'左スティック・WASDで移動 · ドラッグで視点 · Shift/「走る」でダッシュ':'ドラッグで回転 · 2本指・ホイールで拡大 · 右ドラッグで平行移動';
-   gameInput.reset();
-   overviewSequence++;
-   if(next==='map'){
-     resetMap();
-     container.dataset.overviewReady='false';
-     const sequence=overviewSequence;
-     // A close-up river diagnostic needs only its local tile; do not
-     // populate all nine GPU tiles during the textureless performance baseline.
-     const singleRiverView=new URLSearchParams(location.search).get('view')==='river';
-     overviewAbort=new AbortController();
-     const signal=overviewAbort.signal;
-     const startOverview=async()=>{
-       if(singleRiverView){await streamer.ensure('north');return;}
-       if(!wideMap){await streamer.ensureAll({concurrency:2,signal});return;}
-       if(wideLayer)return;
-       // One fixed-size fallback atlas covers the full map while only nearby
-       // tiles retain their normal detail/collision meshes.
-       const builder=createWideOverview(manifest,world.baseElevation,{colorsEnabled});
-       await streamer.scanAll({concurrency:2,signal,onTile:async(entry,field)=>{
-         if(signal.aborted)return;
-         const foliage=await vegetationOverlay(entry).catch(error=>{
-           console.warn('Skipping optional map foliage:',entry.id,error);
-           return null;
-         });
-         builder.addTile(entry,field,foliage);
-         await nextFrame();
-       }});
-       if(signal.aborted)return;
-       const finished=builder.finish();
-       wideLayer=finished;
-       finished.layers.roads.visible=layerVisibility.roads;
-       finished.layers.buildings.visible=layerVisibility.buildings;
-       scene.add(finished.group);
-       updateLayerMetrics();
-     };
-     startOverview().then(()=>{
-       if(mode!=='map'||sequence!==overviewSequence)return;
-       if(!wideMap)resetMap(); // Preserve user pan/zoom during wide atlas acquisition.
-       container.dataset.overviewReady=singleRiverView?'diagnostic':'true';
-       reportStreaming(streamer.snapshot());
-     }).catch(error=>{
-       if(mode!=='map'||sequence!==overviewSequence||error.name==='AbortError')return;
-       console.error('Unable to load complete overview:',error);
-       status.classList.add('failed');
-       status.textContent='全域の読み込みに失敗しました: '+error.message;
-     });
-   }else{
-     container.dataset.overviewReady='false';
-     followCamera(0,true);
-     streamer.update(playerState.x,playerState.z);
-   }
-   reportStreaming(streamer.snapshot());
+   modeButton.textContent=next==='walk'?'マップ':'とじる';
+   modeButton.setAttribute('aria-label',next==='walk'?'全体マップを開く':'全体マップを閉じる');
+   modeButton.setAttribute('aria-expanded',String(next==='map'));
+   hint.textContent='';
+   map2d?.setOpen(next==='map');
+   container.dataset.overviewReady=next==='map'?'true':'false';
+   sound.se('map');
+   if(next==='walk'){followCamera(0,true);streamer.update(playerState.x,playerState.z);}
  }
  document.querySelector('#reset').onclick=async()=>{
-   if(mode==='map'){resetMap();return;}
+   if(mode==='map')return;
    try{
      // Start tile may have been GPU-unloaded after a long walk south.
      // Rehydrate collision + terrain BEFORE teleporting back to spawn.
@@ -564,7 +480,7 @@ async function init(north,manifest){
  const resize=()=>{
    const w=container.clientWidth,h=container.clientHeight;
    camera.aspect=w/Math.max(h,1);camera.updateProjectionMatrix();renderer.setSize(w,h,false);
-   if(mode==='map')resetMap();
+   
  };
  const observer=new ResizeObserver(resize);observer.observe(container);resize();
  const frustum=new THREE.Frustum(),projectionView=new THREE.Matrix4();
@@ -608,7 +524,6 @@ async function init(north,manifest){
      },
      state:()=>({...playerState,tiles:streamer.snapshot()}),
      avatar:()=>playerSprite?.snapshot()||{kind:'model'},
-     setAuditView:(x,z,distance=160)=>{if(mode!=='map')return false;const y=terrainHeight(world,x,z);controls.target.set(x,y,z);camera.position.set(x,y+distance,z+distance*.6);controls.update();return true;},
      biomes:()=>biomeDebug?{totals:biomeDebug.data.totals,candidates:biomeDebug.data.candidates.length,seams:biomeDebug.data.seams.length}:null,
      setMarkerTheme:value=>poiMarkers?.setTheme(value),
      poi:()=>({total:poiRegistry?.points.length||0,visible:poiMarkers?.snapshot()||[]}),
@@ -619,7 +534,7 @@ async function init(north,manifest){
        geometryBytes:(()=>{const buffers=new Set();scene.traverse(o=>{if(o.geometry){for(const a of Object.values(o.geometry.attributes))buffers.add(a.array.buffer);if(o.geometry.index)buffers.add(o.geometry.index.array.buffer);}if(o.instanceColor)buffers.add(o.instanceColor.array.buffer);if(o.instanceMatrix)buffers.add(o.instanceMatrix.array.buffer);});return [...buffers].reduce((n,b)=>n+b.byteLength,0);})(),
        heapBytes:performance.memory?.usedJSHeapSize??null,
        markers:poiMarkers?.snapshot().length||0,
-       render:{...renderer.info.render},
+       render:mode==='map'?{calls:0,triangles:0,points:0,lines:0}:{...renderer.info.render},
        frameP95Ms:Number(container.dataset.frameP95Ms||0),
        longTaskCount:longTaskState.count,
        visibleTiles:Number(container.dataset.frustumVisibleTiles||0),
@@ -629,29 +544,11 @@ async function init(north,manifest){
        wildlifeCandidates:wildlife?.candidateCount||0,
        levels:[...visuals.values()].map(v=>({id:v.entry.id,level:v.level,visible:v.root.visible}))
      }),
+     map:()=>map2d?.snapshot(),
+     sound:()=>sound.snapshot(),
      exploration:()=>exploration?.snapshot(),
      wildlifeSpots:()=>wildlife?.candidatePositions||[],
      worldCollision:(x,z)=>collisionReason(world,x,z),
-     overviewProjection:()=>{
-       const pose=overviewPose(manifest,container.clientWidth/Math.max(1,container.clientHeight),camera.fov);
-       const {bounds}=pose;
-       const corners=[];
-       for(const x of [bounds.minX,bounds.maxX])for(const z of [bounds.minZ,bounds.maxZ]){
-         const projected=new THREE.Vector3(x,world.baseElevation===null?0:5,z).project(camera);
-         corners.push({x,z,ndc:[projected.x,projected.y,projected.z]});
-       }
-       return {mode,ready:container.dataset.overviewReady,extent:pose.dimensions,
-         active:streamer.snapshot().active,corners,fogFar:scene.fog.far};
-     },
-     focusSouthRiver:()=>{
-       if(mode!=='map'||!visuals.has('south'))return false;
-       const x=199,z=390;
-       const y=terrainHeight(world,x,z)+.25;
-       controls.target.set(x,y,z);
-       camera.position.set(x+28,y+54,z+62);
-       controls.update();
-       return true;
-     },
      visualAudit:()=>({
        tiles:[...visuals].map(([id,visual])=>({
          id,
@@ -667,13 +564,6 @@ async function init(north,manifest){
          })||[]
        }))
      }),
-     panOverview:(x,z)=>{
-       if(mode!=='map'||!wideMap)return false;
-       const dx=x-controls.target.x,dz=z-controls.target.z;
-       controls.target.x+=dx;controls.target.z+=dz;
-       camera.position.x+=dx;camera.position.z+=dz;
-       controls.update();return true;
-     },
      tick:()=>streamer.update(playerState.x,playerState.z)
    };
  }
@@ -691,16 +581,9 @@ async function init(north,manifest){
      hudTime+=dt;if(hudTime>.13){updateHud();hudTime=0;}
    }else{accumulator=0;controls.update();}
    streamTime+=dt;if(streamTime>.2){
-     const target=mode==='walk'?{x:playerState.x,z:playerState.z}:
-       wideMap?{x:controls.target.x,z:controls.target.z}:{x:mapTarget.x,z:mapTarget.z};
-     // Never unload terrain/collision around the stationary player while
-     // the user pans far away on a large overview. Walking can then resume
-     // on the very next frame without terrainHeight() touching an absent tile.
-     const retainIds=mode==='map'&&wideMap
-       ?manifest.tiles.filter(entry=>distanceFromRect(playerState.x,playerState.z,entry,manifest.size)<=PRELOAD_DISTANCE).map(entry=>entry.id)
-       :[];
-     streamer.update(target.x,target.z,{retainIds,retainAll:mode==='map'&&!wideMap&&new URLSearchParams(location.search).get('view')!=='river'});streamTime=0;
+     if(mode==='walk')streamer.update(playerState.x,playerState.z);streamTime=0;
    }
+
    qualityTime+=dt;
    if(qualityTime>.28){
      for(const visual of visuals.values())scheduleDetail(visual,detailFor(visual.entry));
@@ -712,10 +595,13 @@ async function init(north,manifest){
    // LOD geometry rebuilds remain throttled above.
    updateVisibleTiles();
    playerSprite?.update({state:playerState,camera,walking:mode==='walk'});
+   landmarkFX.update(dt);
+   map2d?.update(playerState.x,playerState.z,dt,mode==='walk');
+   sound.update(map2d?.biomeAt(playerState.x,playerState.z)||'urban',dt);
    exploration?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
    wildlife?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
-   poiMarkers?.update({camera,mode,focus:mode==='walk'?playerState:controls.target});
-   renderer.render(scene,camera);
+   poiMarkers?.update({camera,mode,focus:playerState,isFound:id=>map2d?.isFound(id),pulse:id=>map2d?.pulse(id)});
+   if(mode==='walk')renderer.render(scene,camera);
    frameIndex++;
    frameDurations.push(rawDt*1000);
    if(frameDurations.length>90)frameDurations.shift();
@@ -735,14 +621,15 @@ async function init(north,manifest){
      metricTime=0;
    }
  }
+ try{map2d=await createExplorationMap({container,registry:poiRegistry||{points:[]},baseURL:import.meta.env.BASE_URL,onDiscover:p=>{landmarkFX.discover(p);sound.se('discover');},onSelect:()=>sound.se('confirm')});map2d.update(playerState.x,playerState.z,0);modeButton.disabled=false;}catch(e){modeButton.disabled=true;container.dataset.mapError='true';console.warn(e);}
  container.dataset.appReady='true';
  reportStreaming(streamer.snapshot());
  draw();
  window.addEventListener('pagehide',()=>{
    cancelAnimationFrame(frame);observer.disconnect();gameInput.destroy();controls.dispose();
-   overviewAbort?.abort();longTaskObserver?.disconnect();
+   longTaskObserver?.disconnect();
    wideLayer?.dispose();
-   exploration?.dispose();wildlife?.dispose();poiMarkers?.dispose();biomeDebug?.dispose();
+   landmarkFX.dispose();map2d?.dispose();sound.dispose();exploration?.dispose();wildlife?.dispose();poiMarkers?.dispose();biomeDebug?.dispose();
    void streamer.dispose();
    natureRenderer.dispose();
    if(playerSprite)playerSprite.dispose();

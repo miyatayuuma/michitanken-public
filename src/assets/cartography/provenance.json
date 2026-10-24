@@ -31,6 +31,24 @@
       "adopted": "flag.png",
       "sha256": "6b271a976a9015161d62f2cbe109bb70d209dfa039e8d4e874c2faa19988b826",
       "processing": "Unmodified PNG; CSS contains at 24px on parchment disc"
+    },
+    {
+      "original": "PNG/Default/gate.png",
+      "adopted": "gate.png",
+      "sha256": "17780d4683e9689fce1403d343d4d89c113eb4e143413bb02d4cd98b0aed88ad",
+      "processing": "Unmodified PNG; 24px cartography map icon"
+    },
+    {
+      "original": "PNG/Default/houseViking.png",
+      "adopted": "houseViking.png",
+      "sha256": "1b5a66745bacd1b8e45de1fb93d6b01d868ea82acff512f2644aca06c019afab",
+      "processing": "Unmodified PNG; 24px cartography map icon"
+    },
+    {
+      "original": "PNG/Default/treePinesSmall.png",
+      "adopted": "treePinesSmall.png",
+      "sha256": "8f26d676fcb4ca09e8ffdef1706f698f20566a9ec3b4f3efe293d416ae131b08",
+      "processing": "Unmodified PNG; 24px cartography map icon"
     }
   ]
 }

@@ -17,8 +17,8 @@ test('POI registry has immutable shared IDs and half-open tile boundary ownershi
 test('POI schema rejects wrong tile, duplicate, nonfinite/outside coordinates, unknown source and private metadata',()=>{
  const mutations=[d=>d.points.push(point()),d=>d.points[0].tileId='east',d=>d.points[0].position[0]=NaN,d=>d.points[0].position[0]=999999,d=>d.points[0].source.id='missing',d=>d.points[0].family='private',d=>d.points[0].name='<script>',d=>d.points[0].marker.range=999999];
  for(const mutate of mutations){const d=data();mutate(d);assert.throws(()=>createPoiRegistry(d,manifest));}
- assert.equal(Object.keys(POI_CATEGORIES).length,5);
- assert.equal(new Set(Object.values(POI_CATEGORIES).map(x=>x.icon)).size,5);
+ assert.equal(Object.keys(POI_CATEGORIES).length,6);
+ assert.equal(new Set(Object.values(POI_CATEGORIES).map(x=>x.icon)).size,6);
 });
 test('screen layout bounds icons AND labels, enforces distance/limits and reserves input/HUD areas',()=>{
  const candidates=Array.from({length:120},(_,i)=>({point:point('p:'+i),x:25+(i%12)*50,y:25+Math.floor(i/12)*45,depth:0,distance:i*5,near:i<10}));
@@ -36,9 +36,9 @@ test('optional POI absence is supported but malformed registry is surfaced',asyn
  await assert.rejects(loadPoiRegistry({baseURL:'/',manifest,fetcher:async()=>Response.json({schema:9})}),/registry/);
 });
 
-test('walking hides recognisable water/bridges and reserves only three landmarks',()=>{
+test('walking permits discovered water/bridges and reserves only three landmarks',()=>{
  const candidates=Array.from({length:10},(_,i)=>({point:{...point('p:'+i),category:i===0?'water':i===1?'bridge':'park'},x:40+i*60,y:100,depth:0,distance:20,near:false}));
- const out=layoutPoiMarkers(candidates,{width:800,height:600,mode:'walk'});assert.equal(out.length,3);assert.ok(out.every(c=>c.point.category==='park'));
+ const out=layoutPoiMarkers(candidates,{width:800,height:600,mode:'walk'});assert.equal(out.length,3);assert.ok(out.some(c=>c.point.category==='water'));assert.ok(out.some(c=>c.point.category==='bridge'));
 });
 
 test('dense overview retains place icons but labels an identical name only once',()=>{

@@ -58,15 +58,15 @@ function withMockBrowser(callback,embedded=false){
     Object.defineProperty(globalThis,k,{configurable:true,writable:true,value:v});
   }
   try{
-    const toggles=[],looks=[],mapCalls=[];
+    const toggles=[],interactions=[],looks=[],mapCalls=[];
     const game=createGameInput({
       canvas:element,joystick:element,knob:element,runButton:element,
       onLook:(...v)=>looks.push(v),onZoom(){},
-      onModeToggle:()=>toggles.push('A'),
+      onModeToggle:()=>toggles.push('X'),onInteract:()=>interactions.push('A'),
       onMapControl:(...v)=>mapCalls.push(v),
       isActive:()=>true
     });
-    callback({game,pad,window,events,toggles,looks,mapCalls});
+    callback({game,pad,window,events,toggles,interactions,looks,mapCalls});
     game.destroy();
   }finally{
     for(const k of keys){
@@ -78,7 +78,7 @@ function withMockBrowser(callback,embedded=false){
 }
 
 test('GC201 walking, ZR dash, A edge, map controls and disconnect',()=>{
-  withMockBrowser(({game,pad,toggles,looks,mapCalls})=>{
+  withMockBrowser(({game,pad,toggles,interactions,looks,mapCalls})=>{
     game.pollGamepad(0.016,'walk'); // neutral arm
     pad.axes=[0.6,-0.6,0.5,0];
     pad.buttons[7].pressed=true;
@@ -90,13 +90,14 @@ test('GC201 walking, ZR dash, A edge, map controls and disconnect',()=>{
     assert.equal(looks.length,1);
     pad.buttons[0].pressed=true;
     game.pollGamepad(0.016,'walk');game.pollGamepad(0.016,'walk');
-    assert.equal(toggles.length,1,'held A must not toggle twice');
+    assert.equal(interactions.length,1,'held A must not collect twice');
+    pad.buttons[2].pressed=true;game.pollGamepad(.016,'walk');assert.equal(toggles.length,1);
     pad.buttons[0].pressed=false;pad.buttons[7].pressed=false;
     game.pollGamepad(0.016,'map');
-    assert.equal(mapCalls.length,1);
+    assert.ok(mapCalls.length>=1);
     pad.buttons[6].pressed=true;
     game.pollGamepad(0.016,'map');
-    assert.equal(mapCalls.at(-1)[0].zoomOut,1);
+    assert.equal('zoomOut' in mapCalls.at(-1)[0],false);assert.equal('lookX' in mapCalls.at(-1)[0],false);
     pad.connected=false;game.pollGamepad(0.016,'walk');
     assert.deepEqual(game.getIntent(),{forward:0,right:0,run:false});
     assert.equal(game.getIntent().run,false);
@@ -104,7 +105,7 @@ test('GC201 walking, ZR dash, A edge, map controls and disconnect',()=>{
 });
 
 test('DreamCore parent owns A and release; untrusted messages are ignored',()=>{
-  withMockBrowser(({game,pad,window,events,toggles})=>{
+  withMockBrowser(({game,pad,window,events,toggles,interactions})=>{
     game.pollGamepad(0.016,'walk');
     const message=events.get('window:message');
     const input={type:'dreamcore:gamepad-v2',action:'button',button:0,phase:'down'};
@@ -112,7 +113,8 @@ test('DreamCore parent owns A and release; untrusted messages are ignored',()=>{
     message({source:window.parent,origin:'https://evil.test',data:input});
     assert.equal(toggles.length,0);
     message({source:window.parent,origin:'https://game.test',data:input});
-    assert.equal(toggles.length,1);
+    assert.equal(interactions.length,1);assert.equal(toggles.length,0);
+    pad.buttons[0].pressed=true;game.pollGamepad(.016,'walk');assert.equal(interactions.length,1);
     pad.axes[0]=1;game.pollGamepad(0.016,'walk');
     assert.ok(game.getIntent().right>0);
     message({source:window.parent,origin:'https://game.test',

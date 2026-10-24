@@ -1,8 +1,15 @@
-name: Public wide overview browser acceptance
+name: Public exploration map browser acceptance
 on:
   pull_request:
     paths:
       - 'src/main.js'
+      - 'src/exploration-map.js'
+      - 'src/landmark-fx.js'
+      - 'src/sound.js'
+      - 'lib/exploration-map.mjs'
+      - 'scripts/browser-map.mjs'
+      - 'scripts/generate-map.mjs'
+      - 'public/data/exploration-map.json'
       - 'src/buildings.js'
       - 'src/vegetation.js'
       - 'src/poi-markers.js'
@@ -49,31 +56,22 @@ jobs:
           npm install --no-audit --no-fund
           npm install --no-save --no-audit --no-fund playwright@1.56.1
           npx playwright install --with-deps chromium
-      - name: Exercise fictional 5x5 atlas, map/walk switching, and GPU budgets
+      - name: Exercise fictional 25-tile 2D map and exploration
         run: |
-          npm run dev -- --host 127.0.0.1 --port 8080 --strictPort > /tmp/michi-vite.log 2>&1 &
-          for i in $(seq 1 40); do
-            if curl --fail --silent http://127.0.0.1:8080/ > /dev/null; then break; fi
-            sleep 1
-          done
-          node scripts/browser-wide-overview.mjs
-          node scripts/browser-player-sprite.mjs
-          node scripts/browser-mt01-mt02.mjs
+          npm test
           BIOME_FIXTURE=$(mktemp -d)/fixture
           node scripts/create-biome-fixture.mjs "$BIOME_FIXTURE"
           ln -s "$PWD/node_modules" "$BIOME_FIXTURE/node_modules"
-          node scripts/browser-mt02r-mt03.mjs "$BIOME_FIXTURE" artifacts/mt02r-mt03
           node scripts/generate-exploration.mjs "$BIOME_FIXTURE"
-          node scripts/browser-exploration.mjs "$BIOME_FIXTURE" artifacts/mt04-mt06
-          node scripts/browser-exploration-walk.mjs "$BIOME_FIXTURE" artifacts/mt04-mt06
-          python scripts/audit-spawn-safety.py "$BIOME_FIXTURE" "$BIOME_FIXTURE/public/data/biomes.json" artifacts/mt02r-mt03/safety.json
+          node scripts/generate-map.mjs "$BIOME_FIXTURE" "$BIOME_FIXTURE/public/data/exploration-map.json"
+          node scripts/browser-map.mjs "$BIOME_FIXTURE" artifacts/mt07
+          node scripts/browser-exploration-walk.mjs "$BIOME_FIXTURE" artifacts/mt07
+          python scripts/audit-spawn-safety.py "$BIOME_FIXTURE" "$BIOME_FIXTURE/public/data/biomes.json" artifacts/mt07/safety.json
       - name: Publish fictional mobile screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: task5c-fictional-wide-mobile
+          name: mt07-fictional-map
           path: |
-            task5c-wide-mobile.png
-            artifacts/mt02r-mt03
-            artifacts/mt04-mt06
+            artifacts/mt07
           if-no-files-found: ignore
