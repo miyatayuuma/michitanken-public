@@ -35,7 +35,7 @@ export function createExploration({scene,container,baseURL,baseElevation,ground,
   try{const response=await fetch(baseURL+'data/exploration/'+entry.id+'.json',{signal:token.controller.signal});if(!response.ok)throw Error('spawn tile '+response.status);const rows=validateSpawnTile(await response.json(),entry);if(closed||tiles.get(entry.id)!==token)return;loaded.set(entry.id,rows);
   }catch(error){if(error.name!=='AbortError'){errorCount++;console.warn('Exploration unavailable',entry.id);}}
  }
- function stop(id){const v=live.get(id);if(!v)return;scene.remove(v.group);live.delete(id);if(v.owned)v.group.traverse(o=>{o.geometry?.dispose();if(o.material)o.material.dispose();});}
+ function stop(id){const v=live.get(id);if(!v)return;scene.remove(v.group);v.mixer?.stopAllAction();v.group.traverse(o=>{if(o.isSkinnedMesh)o.skeleton.dispose();});live.delete(id);if(v.owned)v.group.traverse(o=>{o.geometry?.dispose();if(o.material)o.material.dispose();});}
  function unregister(id){tiles.get(id)?.controller.abort();tiles.delete(id);loaded.delete(id);for(const [k,v] of live)if(v.item.tileId===id)stop(k);}
  async function start(item){
   const d=OBJECTS[item.type],group=new THREE.Group(),v={item,group,ready:false,owned:d.kind==='treasure',state:'idle',reaction:0};live.set(item.id,v);

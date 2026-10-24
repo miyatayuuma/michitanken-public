@@ -112,6 +112,7 @@ export function createWildlifeRenderer({scene,baseURL,baseElevation,onDiscover=(
   if(!value)return;
   value.mixer?.stopAllAction();
   scene.remove(value.group);
+  value.group.traverse(o=>{if(o.isSkinnedMesh)o.skeleton.dispose();});
   live.delete(key);
  }
  function unregister(tileId){
