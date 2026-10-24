@@ -1,3 +1,5 @@
+import {setupNotebook,icon,iconButton} from './notebook-ui.js';
+import {compassBearing,unwrapAngle} from '../lib/map-view.mjs';
 import {createWarpRegistry,canWarp,requiredLandingTiles,validateLanding,createWarpController} from '../lib/warp.mjs';
 import {createLandmarkFX} from './landmark-fx.js';
 import {createExplorationMap} from './exploration-map.js';
@@ -22,7 +24,8 @@ import {createExploration} from './exploration.js';
 import {loadPlayerSprite} from './player-sprite.js';
 import {renderedFootHeight} from '../lib/avatar-ground.mjs';
 import './style.css';
-const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.querySelector('#details');
+const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.createElement('aside');
+const notebook=setupNotebook();document.querySelector('#retry').onclick=()=>location.reload();
 let renderer,controls,scene,camera,frame=0;
 const localY=(field,x,z)=>gridSample(field.terrain,x,z)-field.terrain.min;
 function geometryFromTriangles(triangles){
@@ -288,9 +291,8 @@ async function init(north,manifest){
    const progressLabel=wideMap&&mode==='map'&&wideLayer
      ?'広域 '+wideLayer.loadedTiles+'/'+manifest.tiles.length+' · 詳細 '+visible
      :'読込 '+visible+'/'+manifest.tiles.length;
-   status.textContent=container.dataset.appReady==='false'
-     ?'3Dフィールドを準備中 · 読込 '+visible+'/'+manifest.tiles.length
-     :prefix+progressLabel+' · '+current+progress+error;
+   status.textContent=container.dataset.appReady==='false'?'じゅんびしています…':snapshot.errors.length?'読みこめませんでした':'';
+   document.querySelector('#retry').hidden=!snapshot.errors.length;
    status.classList.toggle('failed',!!snapshot.errors.length);
    status.hidden=container.dataset.appReady!=='false'&&!snapshot.errors.length;
  }
@@ -354,11 +356,7 @@ async function init(north,manifest){
    refreshWater({entry,field:visual.field});
    updateDetails();
  }
- function updateDetails(){
-   const fields=[...visuals.values()].map(v=>v.field);
-   const b=world.bounds;
-   details.textContent=`対象 ${b.maxX-b.minX}m × ${b.maxZ-b.minZ}m · 読込 ${fields.length}/${manifest.tiles.length} · 道路 ${fields.reduce((a,v)=>a+v.osm.roads.length,0)}区間 · 建物 ${fields.reduce((a,v)=>a+v.osm.buildings.length,0)}棟 · 線路 ${fields.reduce((a,v)=>a+v.osm.railways.length,0)}区間 · 水路 ${fields.reduce((a,v)=>a+v.osm.waterways.length,0)}区間`;
- }
+ function updateDetails(){}
  streamer=createTileStreamer({
    manifest,
    fetchTile:async entry=>{
@@ -380,23 +378,26 @@ async function init(north,manifest){
  controls.maxPolarAngle=Math.PI/2.05;controls.minDistance=15;controls.maxDistance=9000;
  controls.screenSpacePanning=true;controls.enabled=false;
  let cameraYaw=spawn.yaw,cameraPitch=.52,cameraDistance=14;
- const coords=document.querySelector('#player-coords');
+ const coords=document.createElement('output');
  const modeButton=document.querySelector('#mode');
- const hint=document.querySelector('#hint');
+ const hint=document.createElement('span');
  const gameInput=createGameInput({
    canvas:renderer.domElement,joystick:document.querySelector('#joystick'),
    knob:document.querySelector('#joystick-knob'),runButton:document.querySelector('#run'),
-   isActive:()=>mode==='walk'&&!warpController?.busy,
+   isActive:()=>mode==='walk'&&!warpController?.busy&&!notebook.opened,
    onLook(dx,dy){if(mode!=='walk'||warpController?.busy)return;cameraYaw+=dx;cameraPitch=Math.min(1.1,Math.max(.2,cameraPitch+dy));},
    onZoom(ratio){if(mode!=='walk'||warpController?.busy)return;cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));},
-   onModeToggle(){changeMode(mode==='walk'?'map':'walk');},
-   onInteract(){sound.activate();if(warpController?.busy)return;if(mode==='map')map2d?.select();else exploration?.collect();},
-   onBack(){if(warpController?.busy){warpController.cancel();return;}if(mode==='map'&&!map2d?.cancel())changeMode('walk');},
-   onCharacter(){switchCharacter();},
-   onActivity(){sound.activate();},
-   onMapControl(input,dt){if(mode==='map')map2d?.move(input,dt);}
+   onModeToggle(){if(notebook.opened){notebook.close();return;}changeMode(mode==='walk'?'map':'walk');},
+   onInteract(){if(notebook.opened){notebook.activate();return;}sound.activate();if(warpController?.busy)return;if(mode==='map')map2d?.select();else exploration?.collect();},
+   onBack(){if(notebook.opened){notebook.close();gameInput.reset();return;}if(warpController?.busy){warpController.cancel();return;}if(mode==='map'&&!map2d?.cancel())changeMode('walk');},
+   onCharacter(id){switchCharacter(id);},
+   onActivity(kind){sound.activate();if(kind)document.querySelector('#app').dataset.input=kind;},
+   onMapControl(input,dt){if(mode==='map')map2d?.move(input,dt);},
+   onMapZoom(delta){if(mode==='map')map2d?.zoomStep(delta);},
+   onMenu(){notebook.toggle();gameInput.reset();},onMenuMove:direction=>notebook.move(direction),onMenuAdjust:amount=>notebook.adjust(amount)
 
  });
+ notebook.onChange(()=>gameInput.reset());
  let footCache=null;
  const avatarPosition=()=>{
    let y=playerState.y;
@@ -451,7 +452,7 @@ async function init(north,manifest){
    if(next==='map'&&!map2d)return;
    mode=next;controls.enabled=false;gameInput.reset();accumulator=0;
    document.querySelector('#app').dataset.mode=mode;
-   modeButton.textContent=next==='walk'?'マップ':'とじる';
+   modeButton.innerHTML=icon(next==='walk'?'map':'close');
    modeButton.setAttribute('aria-label',next==='walk'?'全体マップを開く':'全体マップを閉じる');
    modeButton.setAttribute('aria-expanded',String(next==='map'));
    hint.textContent='';
@@ -460,40 +461,23 @@ async function init(north,manifest){
    sound.se('map');
    if(next==='walk'){followCamera(0,true);streamer.update(playerState.x,playerState.z);}
  }
- document.querySelector('#reset').onclick=async()=>{
-   if(mode!=='walk'||warpController?.busy)return;
-   try{
-     // Start tile may have been GPU-unloaded after a long walk south.
-     // Rehydrate collision + terrain BEFORE teleporting back to spawn.
-     await streamer.ensure('north');
-     resetWalk();
-   }catch(e){
-     console.error('Unable to reload starting tile:',e);
-     status.classList.add('failed');status.textContent='開始地点の読込に失敗: '+e.message;
-   }
- };
- const characterButton=document.createElement('button');characterButton.id='character-switch';characterButton.textContent='キャラ ↔';characterButton.setAttribute('aria-label','猫とうさぎを切り替える（C / Y）');characterButton.hidden=!playerSprite;container.append(characterButton);
- function switchCharacter(){if(mode!=='walk'||warpController?.busy)return;const c=playerSprite?.switchCharacter();if(c){characterButton.dataset.character=c;avatarPosition();}}
- characterButton.onclick=switchCharacter;
+ const characterButton=document.querySelector('#characters');characterButton.hidden=!playerSprite;
+ for(const [id,label] of [['cat','猫（L）'],['rabbit','うさぎ（R）']]){const b=iconButton(id,label,'character-'+id);b.onclick=()=>switchCharacter(id);characterButton.append(b);}
+ function characterState(){for(const b of characterButton.children)b.setAttribute('aria-pressed',String(b.id==='character-'+playerSprite?.snapshot().character));}
+ function switchCharacter(id){if(mode!=='walk'||warpController?.busy||notebook.opened)return;const c=id?playerSprite?.selectCharacter(id):playerSprite?.switchCharacter();if(c){characterState();avatarPosition();}}
+ characterState();
  warpController=createWarpController({
   allowed:id=>mode==='map'&&canWarp(warpRegistry,map2d.store,id),
   load:async id=>{const l=warpRegistry.get(id).landing;await Promise.all(requiredLandingTiles(manifest,l.position[0],l.position[2]).map(id=>streamer.ensure(id)));},
   validate:id=>validateLanding(world,warpRegistry.get(id).landing),
   capture:()=>({player:{...playerState},yaw:cameraYaw,pitch:cameraPitch,distance:cameraDistance,camera:camera.position.clone(),rotation:camera.quaternion.clone(),target:controls.target.clone()}),
-  commit:result=>{playerState={...playerState,x:result.x,y:result.y,z:result.z,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};cameraYaw=result.yaw;playerSprite?.reset();footCache=null;avatarPosition();changeModeAfterWarp();followCamera(0,true);updateHud();},
+  commit:result=>{playerState={...playerState,x:result.x,y:result.y,z:result.z,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};cameraYaw=result.yaw;playerSprite?.reset();footCache=null;avatarPosition();changeModeAfterWarp();followCamera(0,true);landmarkFX.arrive([result.x,result.y+world.baseElevation,result.z]);updateHud();},
   restore:s=>{playerState=s.player;cameraYaw=s.yaw;cameraPitch=s.pitch;cameraDistance=s.distance;camera.position.copy(s.camera);camera.quaternion.copy(s.rotation);controls.target.copy(s.target);avatarPosition();updateHud();},
   transition:async signal=>{container.classList.add('warp-transition');if(!matchMedia('(prefers-reduced-motion: reduce)').matches)await new Promise(resolve=>setTimeout(resolve,140));if(signal.aborted)throw Error('cancelled');},
-  onBusy:value=>{gameInput.reset();accumulator=0;map2d?.setBusy(value);characterButton.disabled=value;if(!value)container.classList.remove('warp-transition');}
+  onBusy:value=>{gameInput.reset();accumulator=0;map2d?.setBusy(value);for(const b of characterButton.children)b.disabled=value;if(!value)container.classList.remove('warp-transition');}
  });
- function changeModeAfterWarp(){mode='walk';document.querySelector('#app').dataset.mode=mode;modeButton.textContent='マップ';modeButton.setAttribute('aria-label','全体マップを開く');modeButton.setAttribute('aria-expanded','false');container.dataset.overviewReady='false';map2d?.setOpen(false);gameInput.reset();}
+ function changeModeAfterWarp(){mode='walk';document.querySelector('#app').dataset.mode=mode;modeButton.innerHTML=icon('map');modeButton.setAttribute('aria-label','全体マップを開く');modeButton.setAttribute('aria-expanded','false');container.dataset.overviewReady='false';map2d?.setOpen(false);gameInput.reset();}
  modeButton.onclick=()=>changeMode(mode==='walk'?'map':'walk');
- for(const name of ['roads','buildings'])document.querySelector('#'+name).onclick=()=>{
-   layerVisibility[name]=!layerVisibility[name];
-   for(const v of visuals.values())v.layers[name].visible=layerVisibility[name];
-   if(wideLayer&&name in wideLayer.layers)wideLayer.layers[name].visible=layerVisibility[name];
-   const button=document.querySelector('#'+name);
-   button.classList.toggle('selected',layerVisibility[name]);button.setAttribute('aria-pressed',String(layerVisibility[name]));
- };
  const resize=()=>{
    const w=container.clientWidth,h=container.clientHeight;
    camera.aspect=w/Math.max(h,1);camera.updateProjectionMatrix();renderer.setSize(w,h,false);
@@ -587,11 +571,13 @@ async function init(north,manifest){
      tick:()=>streamer.update(playerState.x,playerState.z)
    };
  }
+ const compassVector=new THREE.Vector3();let compassAngle=0;
  function draw(){
    frame=requestAnimationFrame(draw);
    const rawDt=clock.getDelta(),dt=Math.min(rawDt,.16);
-   gameInput.pollGamepad(dt,mode);
-   if(mode==='walk'&&!warpController?.busy){
+   gameInput.pollGamepad(dt,notebook.opened?'menu':mode);
+   document.querySelector('#app').dataset.running=String(gameInput.getIntent().run);
+   if(mode==='walk'&&!warpController?.busy&&!notebook.opened){
      accumulator+=dt;const intent=gameInput.getIntent();let n=0;
      while(accumulator>=fixedStep&&n<10){
        playerState=advancePlayer(playerState,{...intent,yaw:cameraYaw},world,fixedStep);
@@ -615,10 +601,11 @@ async function init(north,manifest){
    // LOD geometry rebuilds remain throttled above.
    updateVisibleTiles();
    playerSprite?.update({state:playerState,camera,walking:mode==='walk'});
+   const direction=camera.getWorldDirection(compassVector);const bearing=unwrapAngle(compassBearing(direction.x,direction.z,compassAngle),compassAngle);compassAngle=bearing;document.querySelector('.north-needle').style.transform=`rotate(${-bearing}rad)`;
    landmarkFX.update(dt);
    map2d?.update(playerState.x,playerState.z,dt,mode==='walk');
    sound.update(map2d?.biomeAt(playerState.x,playerState.z)||'urban',dt);
-   exploration?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
+   exploration?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode,camera,occluders:[...visuals.values()].flatMap(v=>[v.root.children[0],...v.layers.buildings.children])});
    wildlife?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
    poiMarkers?.update({camera,mode,focus:playerState,isFound:id=>map2d?.isFound(id),pulse:id=>map2d?.pulse(id),isWarp:id=>canWarp(warpRegistry,map2d?.store||{has:()=>false},id)});
    if(mode==='walk')renderer.render(scene,camera);
@@ -672,7 +659,7 @@ async function main(){
   validateField(field);validateManifest(manifest);
   await init(field,manifest);
  }catch(e){
-  console.error(e);status.classList.add('failed');status.textContent=`読み込み失敗: ${e.message}`;
+  console.error(e);status.classList.add('failed');status.textContent='読みこめませんでした';document.querySelector('#retry').hidden=false;
  }
 }
 main();

@@ -6,7 +6,7 @@ export function createMichiSound(){
  const base=import.meta.env.BASE_URL;
  const ready=(async()=>{const r=await fetch(base+'data/sound.json');if(!r.ok)return;config=await r.json();
   const moduleURL=new URL(config.playerModule,location.origin);if(moduleURL.origin!==location.origin)throw Error('External player refused');
-  const m=await import(/* @vite-ignore */ moduleURL.href);settings=globalThis.DreamcoreAudio;if(!settings)throw Error('DreamcoreAudio unavailable');player=new m.BgmPlayer();
+  const m=await import(/* @vite-ignore */ moduleURL.href);settings=globalThis.DreamcoreAudio;if(!settings)throw Error('DreamcoreAudio unavailable');player=new m.BgmPlayer();window.dispatchEvent(new Event('dreamcore:audio-ready'));
  })().catch(e=>{error=e.message;});
  async function sync(){if(pending||closed||!player||!activated||document.hidden||!config)return;if(settings.gain('bgm')===0){if(lastBiome!==null){player.stop({fadeMs:0});lastBiome=null;}return;}const id=config.biomes[gate.current];if(!id||lastBiome===id)return;pending=true;try{if(await player.play(id,{fadeMs:850}))lastBiome=id;}finally{pending=false;}}
  function activate(){if(closed)return;activated=true;void ready.then(sync);}

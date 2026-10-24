@@ -1,0 +1,15 @@
+# MT-07E-1 notebook UI and input repair
+
+Implementation approval: 2026-10-25. Approved design is PUBLIC PR #17 at f509e5cd4641d1187413c0b24b072ec5633098c6, `docs/mt07e0/{design-system,handoff,audit}.md`. That design-only branch is unchanged. This branch depends on #16 e64806cbd2222897cc3f444cc6f405d4fd8122aa; it does not merge or replace the earlier PRs.
+
+The notebook tokens, original single-family SVG paths, panel/button/focus states now cover the runtime HUD, map, character choices, pickup, menu, loading and error screens. The map remains north-up, uses one reversible transform for raster/fog/markers/player/hits, anchored 1–4x zoom, drag/pinch suppression and zoom-derived scale. Labels use non-overlapping boxes; the selection card exposes the full name. Wheel, pinch, buttons, keyboard pan and standard-pad shoulders/stick are supported.
+
+Camera compass uses the actual camera's horizontal world direction, unwraps the angle across ±π, and retains the last bearing for a vertical view. Player heading is not the source. L3 is an edge-only dash toggle; stopping retains it, mode changes/reset/blur/disconnect/parent release clear it, and neutral rearm protects reconnection. Shift and touch remain holds. L/R directly select cat/rabbit in walking mode and zoom in map mode; Y/ZR pad bindings are removed. Re-selecting the current character preserves the animator.
+
+Normal DOM no longer mounts reset/road/building switches, statistics, coordinates, the brand strip or hint/footer containers. Rendering and existing development test hooks remain. Source attributions are preserved in the menu. No private audit data is added to production assets. Embedded mode omits child audio preferences; standalone mode uses DreamCoreAudio when provided by the production wrapper. Start opens the menu; B closes it; pad d-pad navigates/settings adjust; A activates the focused action. The parent owns A edges in an iframe, and the child polls standalone A only.
+
+Pickup is an icon and static nearest-treasure ring/diamond, limited to a visible uncollected treasure in range with a clear camera ray through terrain/buildings. Animals are excluded. Collection revalidates visibility, uses the existing deduplication/persistence store, removes the highlight and emits a 450ms effect plus existing shared SE. Discovery is one 650ms ring; arrival one 350ms ring. Reduced-motion and low-memory modes retain static effects. No postprocess, extra shadow, persistent animation loop or new texture is introduced.
+
+Automated checks do not accept the physical GC201 labels, mobile device, hardware GPU, perceived sound or child UX. Private real-data and parent integration evidence belongs in PRIVATE repositories. Firebase deploy and merging are not performed by this task.
+
+Reproduction: `npm test`, `npm run build`; generate a fresh fictional fixture using `scripts/create-biome-fixture.mjs`, `generate-exploration.mjs`, `generate-map.mjs`, `create-warp-fixture.mjs`; run `browser-map.mjs` before adding warp fixture and `browser-warp.mjs` afterward. `browser-notebook.mjs ROOT OUT` covers runtime layouts and transformed input; evidence inherits ROOT visibility.

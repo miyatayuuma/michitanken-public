@@ -1,6 +1,8 @@
 import {canWarp} from '../lib/warp.mjs';
 import {createExplorationMapStore} from '../lib/exploration-map.mjs';
-export const MAP_ICONS={park:new URL('./assets/cartography/treePines.png',import.meta.url).href,shrine:new URL('./assets/cartography/gate.png',import.meta.url).href,temple:new URL('./assets/cartography/houseViking.png',import.meta.url).href,bridge:new URL('./assets/cartography/bridge.png',import.meta.url).href,water:new URL('./assets/cartography/lake.png',import.meta.url).href};
+import {createMapView} from '../lib/map-view.mjs';
+import {ICONS,iconButton,icon} from './notebook-ui.js';
+export const MAP_ICONS={};
 export async function createExplorationMap({container,registry,baseURL,onDiscover=()=>{},onSelect=()=>{},onWarp=()=>{},warps=null}){
  const response=await fetch(baseURL+'data/exploration-map.json');if(!response.ok)throw Error('Map unavailable');const data=await response.json();
  if(data.schema!==1||!data.bounds||!Array.isArray(data.lines)||!Array.isArray(data.areas))throw Error('Invalid map');
@@ -9,6 +11,10 @@ export async function createExplorationMap({container,registry,baseURL,onDiscove
  const panel=document.createElement('section');panel.id='exploration-map';panel.hidden=true;panel.setAttribute('aria-label','全体マップ');
  const canvas=document.createElement('canvas');canvas.setAttribute('aria-label','北が上の地図。現在地と発見済みの地点');canvas.tabIndex=0;
  const label=document.createElement('output');label.id='map-selection';label.setAttribute('aria-live','polite');const confirm=document.createElement('button');confirm.id='map-warp';confirm.textContent='ここへいく';confirm.hidden=true;panel.append(canvas,label,confirm);container.append(panel);
+ const title=document.createElement('h2');title.className='map-title';title.textContent='たんけん地図';
+ const card=document.createElement('div');card.className='map-card paper';card.hidden=true;card.append(label,confirm);confirm.className='primary';
+ const zoomBar=document.createElement('div');zoomBar.className='map-zoom';const minus=iconButton('minus','地図を縮小','map-minus'),plus=iconButton('plus','地図を拡大','map-plus'),zoomLabel=document.createElement('output');zoomLabel.setAttribute('aria-label','地図の倍率');zoomBar.append(minus,zoomLabel,plus);panel.append(title,card,zoomBar);
+ const view=createMapView();
  const ctx=canvas.getContext('2d'),base=document.createElement('canvas'),fog=document.createElement('canvas'),images={};base.width=base.height=1000;fog.width=store.cols;fog.height=store.rows;
  const g=base.getContext('2d');g.fillStyle='#eddfb7';g.fillRect(0,0,1000,1000);
  const project=p=>[(p[0]-b.minX)/(b.maxX-b.minX)*1000,(p[1]-b.minZ)/(b.maxZ-b.minZ)*1000];
@@ -18,27 +24,43 @@ export async function createExplorationMap({container,registry,baseURL,onDiscove
  for(const [k,url] of Object.entries(MAP_ICONS)){const im=new Image();im.src=url;images[k]=im;}
  // The raster owns visual detail now. Retain only compact biome cells, not parsed map geometry.
  const mapBytes=JSON.stringify(data).length;data.lines.length=0;data.areas.length=0;
- let busy=false,open=false,px=0,pz=0,cursor={x:.5,y:.5},selected=null,changed=true,flushElapsed=0,closed=false,frame=0,drawMs=0;
+ let cursorVisible=false;let busy=false,open=false,px=0,pz=0,cursor={x:.5,y:.5},selected=null,changed=true,flushElapsed=0,closed=false,frame=0,drawMs=0;
  const pulses=new Map();let w=1,h=1,side=1,left=0,top=0;
- function layout(){w=panel.clientWidth;h=panel.clientHeight;const dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;canvas.style.width=w+'px';canvas.style.height=h+'px';ctx.setTransform(dpr,0,0,dpr,0,0);side=Math.min(w-28,h-124);left=(w-side)/2;top=Math.max(10,(h-110-side)/2);label.style.top=(top+side+12)+'px';label.style.bottom='auto';}
- const position=p=>({x:left+(p[0]-b.minX)/(b.maxX-b.minX)*side,y:top+(p[2]-b.minZ)/(b.maxZ-b.minZ)*side});
+ function layout(){w=panel.clientWidth;h=panel.clientHeight;const dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;canvas.style.width=w+'px';canvas.style.height=h+'px';ctx.setTransform(dpr,0,0,dpr,0,0);const header=Math.max(84,title.offsetTop+title.offsetHeight+12);side=Math.max(1,Math.min(w-28,h-header-106));left=(w-side)/2;top=header+(h-header-106-side)/2;view.layout(side,left,top);}
+ const position=p=>view.project((p[0]-b.minX)/(b.maxX-b.minX),(p[2]-b.minZ)/(b.maxZ-b.minZ));
  function fogUpdate(){const f=fog.getContext('2d');f.clearRect(0,0,store.cols,store.rows);f.fillStyle='#e5ebeb';for(let r=0;r<store.rows;r++)for(let c=0;c<store.cols;c++)if(!store.cells[r*store.cols+c])f.fillRect(c,r,1,1);changed=false;}
- function draw(){const start=performance.now();ctx.clearRect(0,0,w,h);ctx.drawImage(base,left,top,side,side);if(changed)fogUpdate();ctx.imageSmoothingEnabled=true;ctx.drawImage(fog,left,top,side,side);
- for(const p of registry.points){if(!store.has(p.id))continue;const {x,y}=position(p.position);ctx.fillStyle=selected===p.id?'#ffe38e':'#fff4d6';ctx.strokeStyle=canWarp(warps,store,p.id)?'#21846f':'#706047';ctx.lineWidth=canWarp(warps,store,p.id)?4:1.5;ctx.beginPath();ctx.arc(x,y,16,0,Math.PI*2);ctx.fill();ctx.stroke();const im=images[p.category];if(im?.complete&&im.naturalWidth)ctx.drawImage(im,x-12,y-12,24,24);else{ctx.fillStyle='#566d51';ctx.fillRect(x-4,y-4,8,8);}}
- const p=position([px,0,pz]);ctx.beginPath();ctx.arc(p.x,p.y,7,0,Math.PI*2);ctx.fillStyle='#ce6746';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.stroke();
- const x=left+cursor.x*side,y=top+cursor.y*side;ctx.strokeStyle='#363d38';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,12,0,Math.PI*2);ctx.moveTo(x-18,y);ctx.lineTo(x-8,y);ctx.moveTo(x+8,y);ctx.lineTo(x+18,y);ctx.moveTo(x,y-18);ctx.lineTo(x,y-8);ctx.moveTo(x,y+8);ctx.lineTo(x,y+18);ctx.stroke();
- ctx.fillStyle='#394d44';ctx.font='bold 13px system-ui';ctx.fillText('N ↑',left+8,top+19);ctx.font='11px system-ui';ctx.fillText('500m',left+8,top+side-10);ctx.fillRect(left+8,top+side-7,side*500/(b.maxX-b.minX),2);drawMs=performance.now()-start;frame=requestAnimationFrame(draw);}
+ function draw(){const start=performance.now(),v=view.snapshot(),origin=view.project(0,0);ctx.clearRect(0,0,w,h);ctx.save();ctx.beginPath();ctx.rect(left,top,side,side);ctx.clip();ctx.drawImage(base,origin.x,origin.y,side*v.zoom,side*v.zoom);if(changed)fogUpdate();ctx.imageSmoothingEnabled=true;ctx.drawImage(fog,origin.x,origin.y,side*v.zoom,side*v.zoom);
+ const labelBoxes=[];
+ for(const p of registry.points){if(!store.has(p.id))continue;const {x,y}=position(p.position);if(x<left-20||x>left+side+20||y<top-20||y>top+side+20)continue;const chosen=selected===p.id;ctx.fillStyle='#fff5df';ctx.strokeStyle=chosen?'#9b4b25':canWarp(warps,store,p.id)?'#245b4d':'#71644e';ctx.lineWidth=chosen?4:2;ctx.beginPath();ctx.arc(x,y,17,0,Math.PI*2);ctx.fill();ctx.stroke();if(chosen){ctx.beginPath();ctx.arc(x,y,21,0,Math.PI*2);ctx.lineWidth=1;ctx.stroke();}
+ ctx.save();ctx.translate(x-11,y-11);ctx.scale(22/24,22/24);ctx.lineWidth=1.8;ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke(new Path2D(ICONS[p.category]||ICONS.flag));ctx.restore();
+ // Labels only when they fit; the selection card always exposes the full name.
+ if(v.zoom>=2||chosen){ctx.font='12px system-ui';const text=p.name.length>14?p.name.slice(0,13)+'…':p.name,tw=ctx.measureText(text).width;const box={x:x-tw/2-3,y:y+21,w:tw+6,h:19};if(box.x>=left&&box.x+box.w<=left+side&&box.y+box.h<=top+side&&!labelBoxes.some(q=>box.x<q.x+q.w+4&&box.x+box.w+4>q.x&&box.y<q.y+q.h&&box.y+box.h>q.y)){ctx.fillStyle='#fff5df';ctx.fillRect(box.x,box.y,box.w,box.h);ctx.fillStyle='#303b35';ctx.fillText(text,x-tw/2,y+35);labelBoxes.push(box);}}
+ }
+ const p=position([px,0,pz]);ctx.beginPath();ctx.arc(p.x,p.y,7,0,Math.PI*2);ctx.fillStyle='#9b4b25';ctx.fill();ctx.strokeStyle='#fff5df';ctx.lineWidth=3;ctx.stroke();ctx.beginPath();ctx.moveTo(p.x,p.y-13);ctx.lineTo(p.x-4,p.y-7);ctx.lineTo(p.x+4,p.y-7);ctx.closePath();ctx.fill();
+ if(cursorVisible){const {x,y}=view.project(cursor.x,cursor.y);ctx.strokeStyle='#9b4b25';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,23,0,Math.PI*2);ctx.moveTo(x-27,y);ctx.lineTo(x-17,y);ctx.moveTo(x+17,y);ctx.lineTo(x+27,y);ctx.stroke();}
+ ctx.restore();ctx.strokeStyle='#71644e';ctx.lineWidth=1.5;ctx.strokeRect(left,top,side,side);ctx.fillStyle='#fff5df';ctx.fillRect(left+2,top+2,48,30);ctx.fillStyle='#303b35';ctx.font='bold 14px system-ui';ctx.fillText('N ↑',left+10,top+22);
+ const scale=view.scale(b.maxX-b.minX,Math.min(80,w*.23));ctx.font='12px system-ui';ctx.fillText(scale.distance+'m',left,h-24);ctx.fillRect(left,h-18,scale.pixels,2);zoomLabel.textContent=Number(v.zoom.toFixed(1))+'×';minus.disabled=busy||v.zoom<=1;plus.disabled=busy||v.zoom>=4;drawMs=performance.now()-start;frame=requestAnimationFrame(draw);}
  const observer=new ResizeObserver(()=>{if(open)layout();});observer.observe(panel);
- function clearSelection(){const had=selected!==null;selected=null;label.textContent='';confirm.hidden=true;return had;}
- function select(){if(!open||busy)return null;let nearest=null,distance=24;for(const p of registry.points){if(!store.has(p.id))continue;const q=position(p.position),d=Math.hypot(q.x-left-cursor.x*side,q.y-top-cursor.y*side);if(d<distance){nearest=p;distance=d;}}
+ function clearSelection(){const had=selected!==null;selected=null;label.textContent='';confirm.hidden=true;card.hidden=true;return had;}
+ function select(){if(!open||busy)return null;let nearest=null,distance=24;for(const p of registry.points){if(!store.has(p.id))continue;const q=position(p.position),d=Math.hypot(q.x-view.project(cursor.x,cursor.y).x,q.y-view.project(cursor.x,cursor.y).y);if(d<distance){nearest=p;distance=d;}}
  if(nearest&&selected===nearest.id&&canWarp(warps,store,nearest.id)){onWarp(nearest.id);return selected;}
- selected=nearest?.id||null;label.textContent=nearest?.name||'';confirm.hidden=!nearest||!canWarp(warps,store,nearest.id);if(nearest)onSelect();return selected;}
+ selected=nearest?.id||null;card.hidden=!nearest;label.textContent=nearest?.name||'';confirm.hidden=!nearest||!canWarp(warps,store,nearest.id);if(nearest)onSelect();return selected;}
  confirm.addEventListener('click',()=>{if(open&&!busy&&selected&&canWarp(warps,store,selected))onWarp(selected);});
- function point(e){const rect=canvas.getBoundingClientRect();cursor={x:Math.max(0,Math.min(1,(e.clientX-rect.left-left)/side)),y:Math.max(0,Math.min(1,(e.clientY-rect.top-top)/side))};}
- canvas.addEventListener('pointerdown',e=>{point(e);select();e.preventDefault();});
- return {store,cancel:clearSelection,setBusy(value){busy=value;confirm.disabled=value;},failure(){label.textContent='いどうできませんでした';},setOpen(value){clearSelection();open=value;panel.hidden=!value;cancelAnimationFrame(frame);if(value){cursor={x:(px-b.minX)/(b.maxX-b.minX),y:(pz-b.minZ)/(b.maxZ-b.minZ)};layout();draw();canvas.focus();}else store.flush();},move(input,dt){if(open&&!busy){if(input.moveX||input.moveY)clearSelection();cursor.x=Math.max(0,Math.min(1,cursor.x+input.moveX*dt*.55));cursor.y=Math.max(0,Math.min(1,cursor.y+input.moveY*dt*.55));}},select,
+ function point(e){const r=canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
+ const pointers=new Map();let gesture=false,dragged=false,down=null;
+ const center=()=>{const [a,b]=[...pointers.values()];return {x:(a.x+b.x)/2,y:(a.y+b.y)/2,d:Math.hypot(a.x-b.x,a.y-b.y)};};
+ function zoom(value,anchor){if(busy)return;clearSelection();view.zoom(value,anchor?.x,anchor?.y);}
+ function zoomStep(delta){zoom(view.snapshot().zoom+delta);}
+ minus.onclick=()=>zoomStep(-1);plus.onclick=()=>zoomStep(1);
+ canvas.addEventListener('wheel',e=>{e.preventDefault();zoom(view.snapshot().zoom*Math.exp(-e.deltaY*.002),point(e));},{passive:false});
+ canvas.addEventListener('pointerdown',e=>{if(busy||e.button>0)return;cursorVisible=false;canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,point(e));if(pointers.size===1){down=point(e);dragged=false;gesture=false;}else{gesture=true;clearSelection();}e.preventDefault();});
+ canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId)||busy)return;const old=pointers.get(e.pointerId),q=point(e),before=pointers.size>=2?center():null;pointers.set(e.pointerId,q);if(pointers.size>=2){const after=center();zoom(view.snapshot().zoom*after.d/Math.max(1,before.d),before);view.pan(after.x-before.x,after.y-before.y);gesture=true;}else if(down){if(Math.hypot(q.x-down.x,q.y-down.y)>=8)dragged=true;if(dragged){clearSelection();view.pan(q.x-old.x,q.y-old.y);}}e.preventDefault();});
+ function end(e,cancel=false){if(!pointers.has(e.pointerId))return;const q=point(e);pointers.delete(e.pointerId);if(!cancel&&!gesture&&!dragged&&down){cursor=view.inverse(q.x,q.y);select();}if(!pointers.size){down=null;gesture=false;}else{down=null;gesture=true;}}
+ canvas.addEventListener('pointerup',e=>end(e));canvas.addEventListener('pointercancel',e=>end(e,true));canvas.addEventListener('lostpointercapture',e=>end(e,true));
+ return {store,zoomStep,cancel:clearSelection,setBusy(value){busy=value;confirm.disabled=value;confirm.innerHTML=value?icon('busy'):'ここへいく';confirm.setAttribute('aria-busy',String(value));},failure(){card.hidden=false;label.textContent='！いどうできませんでした';},setOpen(value){clearSelection();open=value;panel.hidden=!value;cancelAnimationFrame(frame);if(value){view.reset();cursorVisible=false;cursor={x:(px-b.minX)/(b.maxX-b.minX),y:(pz-b.minZ)/(b.maxZ-b.minZ)};layout();draw();canvas.focus();}else store.flush();},move(input,dt){if(open&&!busy&&(input.moveX||input.moveY)){clearSelection();cursorVisible=true;view.pan(-input.moveX*dt*side*.65,-input.moveY*dt*side*.65);const v=view.snapshot();if(v.zoom>1)cursor=view.inverse(left+side/2,top+side/2);if(v.zoom===1){cursor.x=Math.max(0,Math.min(1,cursor.x+input.moveX*dt*.55));cursor.y=Math.max(0,Math.min(1,cursor.y+input.moveY*dt*.55));}}},select,
+
  update(x,z,dt,walking=true){if(closed)return;px=x;pz=z;if(walking){changed=store.reveal(x,z)||changed;for(const p of registry.points)if(Math.hypot(p.position[0]-x,p.position[2]-z)<=75&&store.discover(p.id)){pulses.set(p.id,performance.now());onDiscover(p);}}flushElapsed+=dt;if(flushElapsed>1){store.flush();flushElapsed=0;}},
- isFound:id=>store.has(id),pulse:id=>{const t=pulses.get(id);if(t===undefined)return 0;const elapsed=performance.now()-t;if(elapsed>1600){pulses.delete(id);return 0;}return 1-elapsed/1600;},
+ isFound:id=>store.has(id),pulse:id=>{const t=pulses.get(id);if(t===undefined)return 0;const elapsed=performance.now()-t;if(elapsed>650){pulses.delete(id);return 0;}return 1-elapsed/650;},
  biomeAt(x,z){const v=data.biomes,c=Math.floor((x-b.minX)/v.step),r=Math.floor((z-b.minZ)/v.step);return ['urban','grassland','woodland','waterside'][c>=0&&c<v.cols&&r>=0&&r<v.rows?+v.cells[r*v.cols+c]:0];},
- snapshot:()=>({...store.snapshot(),open,selected,cursor:{...cursor},drawMs,canvasPixels:canvas.width*canvas.height,basePixels:1000000,mapBytes,warpEnabled:!!warps?.enabled,unlocked:registry.points.filter(p=>canWarp(warps,store,p.id)).map(p=>p.id),busy}),dispose(){closed=true;store.flush();cancelAnimationFrame(frame);observer.disconnect();panel.remove();base.width=base.height=fog.width=fog.height=0;}};
+ snapshot:()=>({...store.snapshot(),open,selected,cursor:{...cursor},view:view.snapshot(),points:registry.points.filter(p=>store.has(p.id)).map(p=>({id:p.id,...position(p.position)})),drawMs,canvasPixels:canvas.width*canvas.height,basePixels:1000000,mapBytes,warpEnabled:!!warps?.enabled,unlocked:registry.points.filter(p=>canWarp(warps,store,p.id)).map(p=>p.id),busy}),dispose(){closed=true;store.flush();cancelAnimationFrame(frame);observer.disconnect();panel.remove();base.width=base.height=fog.width=fog.height=0;}};
 }
