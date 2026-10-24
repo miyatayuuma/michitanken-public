@@ -4,6 +4,8 @@ on:
     paths:
       - 'src/notebook-ui.js'
       - 'lib/map-view.mjs'
+      - 'lib/map-marker.mjs'
+      - 'scripts/browser-small-markers.mjs'
       - 'scripts/browser-notebook.mjs'
       - 'scripts/browser-collection-states.mjs'
       - 'src/main.js'
@@ -76,6 +78,7 @@ jobs:
           node scripts/create-warp-fixture.mjs "$BIOME_FIXTURE"
           node scripts/browser-warp.mjs "$BIOME_FIXTURE" artifacts/mt07c
           node scripts/browser-notebook.mjs "$BIOME_FIXTURE" artifacts/mt07e1
+          node scripts/browser-small-markers.mjs "$BIOME_FIXTURE" artifacts/mt07e2a
           node scripts/browser-collection-states.mjs "$BIOME_FIXTURE" artifacts/mt07e1
           python scripts/audit-spawn-safety.py "$BIOME_FIXTURE" "$BIOME_FIXTURE/public/data/biomes.json" artifacts/mt07/safety.json
       - name: Publish fictional mobile screenshot
@@ -87,4 +90,5 @@ jobs:
             artifacts/mt07
             artifacts/mt07c
             artifacts/mt07e1
+            artifacts/mt07e2a
           if-no-files-found: ignore

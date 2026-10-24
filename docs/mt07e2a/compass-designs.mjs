@@ -1,0 +1,8 @@
+// Review-only SVGs. Never imported by production src. Text stays upright.
+export function compassSVG(variant,angle=0){
+ const paper='#fff5df',ink='#303b35',edge='#71644e',rust='#9b4b25';
+ const needle=variant==='A'?`<path d="M32 16 36 33 32 30 28 33Z" fill="${rust}"/><path d="M32 48 28 31 32 34 36 31Z" fill="${ink}"/>`:`<path d="M32 14 36 28 50 32 36 36 32 50 28 36 14 32 28 28Z" fill="${paper}" stroke="${ink}" stroke-width="1.1"/><path d="M32 14 36 28 32 32 28 28Z" fill="${rust}"/><path d="m32 32 4 4-4 14Z M32 32 18 32l10-4Z" fill="${ink}"/>`;
+ const letters=(variant==='A'?['N']:['N','E','S','W']).map((letter,i)=>{const a=(angle+i*90)*Math.PI/180,x=32+23*Math.sin(a),y=32-23*Math.cos(a);return `<text x="${x.toFixed(3)}" y="${(y+3.3).toFixed(3)}" fill="${letter==='N'?rust:ink}">${letter}</text>`;}).join('');
+ const ticks=variant==='A'?'<path d="M14 32h3m30 0h3M32 51v2M18 18l2 2m24-2-2 2m2 24-2-2m-22 0-2 2"/>':'<path d="M32 9v2M9 32h2m42 0h2M32 53v2"/>';
+ return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-label="${variant==='A'?'手描きの方位磁針':'手描きの羅針盤'}"><path d="M32 3C48 2 61 16 60 32c2 16-12 29-28 29S3 48 4 32C2 15 16 3 32 3Z" fill="${paper}" stroke="${edge}" stroke-width="1.3"/><circle cx="32" cy="32" r="25" fill="none" stroke="${edge}" stroke-opacity=".28" stroke-width=".7"/><g fill="none" stroke="${edge}" stroke-width="1.2" stroke-linecap="round">${ticks}</g><g transform="rotate(${angle} 32 32)">${needle}</g><circle cx="32" cy="32" r="2.1" fill="${paper}" stroke="${ink}" stroke-width="1.2"/><g fill="${ink}" font-family="system-ui,sans-serif" font-size="${variant==='A'?11:9.5}" font-weight="600" text-anchor="middle">${letters}</g></svg>`;
+}
