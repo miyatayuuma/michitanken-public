@@ -53,7 +53,7 @@ try{
    await page.route('**/data/pois.json',r=>r.fulfill({json:dense}));
    await page.goto('http://127.0.0.1:8083/?test=1');await page.waitForFunction(()=>document.querySelector('#scene')?.dataset.appReady==='true');await page.locator('#mode').click();await page.waitForFunction(()=>document.querySelector('#scene').dataset.overviewReady==='true',null,{timeout:90000});
    await page.evaluate(()=>window.__michiDebug.setAuditView(0,0,160));await settle(page);
-   const layout=await page.evaluate(()=>window.__michiDebug.poi());assert.ok(layout.visible.length>0);for(let i=0;i<layout.visible.length;i++)for(const b of layout.visible.slice(i+1))assert.ok(!rectanglesOverlap(layout.visible[i].box,b.box,8));
+   const layout=await page.evaluate(()=>window.__michiDebug.poi());assert.ok(layout.visible.length>0);const labels=layout.visible.filter(c=>c.label).map(c=>dense.points.find(p=>p.id===c.id).name);assert.equal(new Set(labels).size,labels.length);for(let i=0;i<layout.visible.length;i++)for(const b of layout.visible.slice(i+1))assert.ok(!rectanglesOverlap(layout.visible[i].box,b.box,8));
    await page.screenshot({path:path.join(out,`${device}-dense.png`)});
   }
   assert.deepEqual(errors,[]);await context.close();

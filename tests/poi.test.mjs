@@ -40,3 +40,8 @@ test('walking hides recognisable water/bridges and reserves only three landmarks
  const candidates=Array.from({length:10},(_,i)=>({point:{...point('p:'+i),category:i===0?'water':i===1?'bridge':'park'},x:40+i*60,y:100,depth:0,distance:20,near:false}));
  const out=layoutPoiMarkers(candidates,{width:800,height:600,mode:'walk'});assert.equal(out.length,3);assert.ok(out.every(c=>c.point.category==='park'));
 });
+
+test('dense overview retains place icons but labels an identical name only once',()=>{
+ const candidates=Array.from({length:5},(_,i)=>({point:point('p:'+i),x:150+i*180,y:100,depth:0,distance:20,near:true}));
+ const out=layoutPoiMarkers(candidates,{width:1200,height:600,mode:'map'});assert.equal(out.length,5);assert.equal(out.filter(c=>c.label).length,1);
+});
