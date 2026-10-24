@@ -7,6 +7,9 @@ on:
       - 'src/landmark-fx.js'
       - 'src/sound.js'
       - 'lib/exploration-map.mjs'
+      - 'lib/warp.mjs'
+      - 'scripts/browser-warp.mjs'
+      - 'scripts/create-warp-fixture.mjs'
       - 'scripts/browser-map.mjs'
       - 'scripts/generate-map.mjs'
       - 'public/data/exploration-map.json'
@@ -66,6 +69,8 @@ jobs:
           node scripts/generate-map.mjs "$BIOME_FIXTURE" "$BIOME_FIXTURE/public/data/exploration-map.json"
           node scripts/browser-map.mjs "$BIOME_FIXTURE" artifacts/mt07
           node scripts/browser-exploration-walk.mjs "$BIOME_FIXTURE" artifacts/mt07
+          node scripts/create-warp-fixture.mjs "$BIOME_FIXTURE"
+          node scripts/browser-warp.mjs "$BIOME_FIXTURE" artifacts/mt07c
           python scripts/audit-spawn-safety.py "$BIOME_FIXTURE" "$BIOME_FIXTURE/public/data/biomes.json" artifacts/mt07/safety.json
       - name: Publish fictional mobile screenshot
         if: always()
@@ -74,4 +79,5 @@ jobs:
           name: mt07-fictional-map
           path: |
             artifacts/mt07
+            artifacts/mt07c
           if-no-files-found: ignore

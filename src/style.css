@@ -71,3 +71,9 @@ footer{background:#142c2c;display:flex;justify-content:space-between;gap:10px;pa
 @keyframes landmark-glow{0%,35%{filter:brightness(1.7);box-shadow:0 0 20px #ffe184}100%{filter:brightness(1)}}
 @keyframes landmark-ring{0%{transform:scale(.7);opacity:1}100%{transform:scale(3);opacity:0}}
 @media(prefers-reduced-motion:reduce){.poi-marker.discovering .poi-icon,.poi-marker.discovering .poi-icon:after{animation:none}}
+#map-warp{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);border:2px solid #287e69;border-radius:22px;padding:9px 24px;background:#fff4d6;color:#244b40;font-weight:bold;min-height:44px}
+#character-switch{position:absolute;right:14px;top:70px;z-index:12;border:1px solid #b2a780;border-radius:18px;padding:8px 12px;background:#fff4d6;color:#344a3d;min-height:44px}
+#app[data-mode="map"] #character-switch{display:none}
+#scene.warp-transition{opacity:.25;transition:opacity .12s}
+.poi-marker.warp-open{filter:drop-shadow(0 0 4px #52d5bd)}
+@media(prefers-reduced-motion:reduce){#scene.warp-transition{transition:none}.poi-marker.discovering{animation:none!important}}

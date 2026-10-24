@@ -14,7 +14,8 @@ export function createSpriteAvatar(config,texture){
  const shadow=new THREE.Mesh(new THREE.CircleGeometry(.48,20),new THREE.MeshBasicMaterial({
   color:0x1b3935,transparent:true,opacity:.24,depthTest:true,depthWrite:false}));
  shadow.rotation.x=-Math.PI/2;shadow.position.y=.035;group.add(shadow);
- const animator=createSpriteAnimator(config);
+ let activeConfig=config,character=config.characters?.[0]?.id||null;
+ let animator=createSpriteAnimator(config);
  let current={frame:-1,flipped:false,active:false,phase:0},disposed=false;
  function setFrame(frame){
   const {rect:[x,y,w,h],pivot:[px,py]}=config.frames[frame],ppu=config.pixelsPerUnit;
@@ -33,6 +34,12 @@ export function createSpriteAvatar(config,texture){
  return {
   group,
   reset:()=>animator.reset(),
+  switchCharacter(){
+   if(!config.characters?.length)return null;
+   const index=config.characters.findIndex(c=>c.id===character),next=config.characters[(index+1)%config.characters.length];
+   activeConfig=validateSpriteConfig({...config,animations:next.animations});character=next.id;
+   animator=createSpriteAnimator(activeConfig,current.flipped);current={...current,frame:-1};setFrame(activeConfig.animations.idle[0]);return character;
+  },
   update({state,camera,walking=true}){
    if(disposed)return;
    const yaw=Math.atan2(camera.position.x-state.x,camera.position.z-state.z);
@@ -41,7 +48,7 @@ export function createSpriteAvatar(config,texture){
    // Upright cylindrical billboard preserves ground contact at every camera pitch.
    plane.rotation.y=yaw;plane.scale.x=next.flipped?-1:1;current=next;
   },
-  snapshot:()=>({...current,pixelsPerUnit:config.pixelsPerUnit,depthTest:material.depthTest,
+  snapshot:()=>({...current,character,pixelsPerUnit:config.pixelsPerUnit,depthTest:material.depthTest,
    depthWrite:material.depthWrite,position:group.position.toArray(),yaw:plane.rotation.y}),
   dispose(){if(disposed)return;disposed=true;geometry.dispose();material.dispose();texture.dispose();
    shadow.geometry.dispose();shadow.material.dispose();}
