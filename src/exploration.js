@@ -16,7 +16,7 @@ export function createExploration({scene,container,baseURL,baseElevation,ground,
  let storage;try{storage=window.localStorage;}catch{storage={getItem(){throw Error('storage unavailable');},setItem(){throw Error('storage unavailable');}};}
  const records=createDiscoveryStore(storage),tiles=new Map(),loaded=new Map(),live=new Map(),templates=new Map(),loader=new GLTFLoader();
  const abort=new AbortController(),{signal}=abort;let elapsed=0,time=0,closed=false,mode='walk',px=0,pz=0,nearest=null,journalOpen=false,errorCount=0;
- const limit=low?6:12,interval=low?.2:.1;
+ const limit=low?6:12,interval=low?.2:.1;let sharedColormap=null;
  const pickup=document.createElement('button');pickup.id='explore-pickup';pickup.hidden=true;pickup.textContent='ひろう';pickup.title='E / コントローラー X';pickup.setAttribute('aria-label','宝物をひろう');
  const journal=document.createElement('section');journal.id='explore-journal';journal.hidden=true;journal.setAttribute('aria-label','みつけたもの');
  const open=document.createElement('button');open.id='explore-records';open.textContent='みつけたもの';open.title='J / コントローラー Y';open.setAttribute('aria-expanded','false');
@@ -29,7 +29,7 @@ export function createExploration({scene,container,baseURL,baseElevation,ground,
  }
  function toggleJournal(value=!journalOpen){journalOpen=value;journal.hidden=!value;open.setAttribute('aria-expanded',String(value));if(value){toast.hidden=true;clearTimeout(toastTimer);renderRecords();journal.querySelector('button').focus();}else open.focus();}
  const safeGround=(x,z,fallback)=>{try{const y=ground(x,z);return Number.isFinite(y)?y:fallback;}catch{return fallback;}};
- const model=type=>{if(!templates.has(type))templates.set(type,loader.loadAsync(models[type]).catch(e=>{errorCount++;throw e;}));return templates.get(type);};
+ const model=type=>{if(!templates.has(type))templates.set(type,loader.loadAsync(models[type]).then(gltf=>{const retired=new Set();gltf.scene.traverse(o=>{for(const m of o.material?Array.isArray(o.material)?o.material:[o.material]:[]){if(!m.map)continue;if(!sharedColormap)sharedColormap=m.map;else if(m.map!==sharedColormap){retired.add(m.map);m.map=sharedColormap;}}});retired.forEach(t=>t.dispose());return gltf;}).catch(e=>{errorCount++;throw e;}));return templates.get(type);};
  async function register(entry){
   const token={controller:new AbortController()};tiles.get(entry.id)?.controller.abort();tiles.set(entry.id,token);
   try{const response=await fetch(baseURL+'data/exploration/'+entry.id+'.json',{signal:token.controller.signal});if(!response.ok)throw Error('spawn tile '+response.status);const rows=validateSpawnTile(await response.json(),entry);if(closed||tiles.get(entry.id)!==token)return;loaded.set(entry.id,rows);
