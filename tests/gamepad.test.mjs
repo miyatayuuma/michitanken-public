@@ -58,15 +58,15 @@ function withMockBrowser(callback,embedded=false){
     Object.defineProperty(globalThis,k,{configurable:true,writable:true,value:v});
   }
   try{
-    const toggles=[],interactions=[],looks=[],mapCalls=[];
+    const toggles=[],interactions=[],looks=[],mapCalls=[],characters=[],backs=[];
     const game=createGameInput({
       canvas:element,joystick:element,knob:element,runButton:element,
       onLook:(...v)=>looks.push(v),onZoom(){},
-      onModeToggle:()=>toggles.push('X'),onInteract:()=>interactions.push('A'),
+      onModeToggle:()=>toggles.push('X'),onInteract:()=>interactions.push('A'),onCharacter:()=>characters.push('Y'),onBack:()=>backs.push('B'),
       onMapControl:(...v)=>mapCalls.push(v),
       isActive:()=>true
     });
-    callback({game,pad,window,events,toggles,interactions,looks,mapCalls});
+    callback({game,pad,window,events,toggles,interactions,looks,mapCalls,characters,backs});
     game.destroy();
   }finally{
     for(const k of keys){
@@ -132,3 +132,12 @@ test('existing touch and keyboard controls remain present',()=>{
   assert.match(src,/runHeld/);
   assert.doesNotMatch(src,/ゲームパッドメニュー|innerHTML\s*=/);
 });
+
+ test('Y and B are local edges and held input is released until neutral after mode reset',()=>{
+  withMockBrowser(({game,pad,characters,backs})=>{
+   game.pollGamepad(.016,'walk');pad.buttons[3].pressed=true;game.pollGamepad(.016,'walk');game.pollGamepad(.016,'walk');assert.equal(characters.length,1);
+   pad.buttons[1].pressed=true;game.pollGamepad(.016,'map');assert.equal(backs.length,1);
+   pad.axes[0]=1;game.reset();game.pollGamepad(.016,'walk');assert.equal(game.getIntent().right,0);
+   pad.axes[0]=0;pad.buttons.forEach(b=>b.pressed=false);game.pollGamepad(.016,'walk');pad.axes[0]=1;game.pollGamepad(.016,'walk');assert.equal(game.getIntent().right,1);
+  },true);
+ });
