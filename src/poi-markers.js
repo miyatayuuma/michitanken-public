@@ -22,7 +22,7 @@ export function createPoiMarkers({container,registry,baseElevation,mobile=false}
  }
  // Reserved HUD rectangles are read only at creation/resize, never each frame.
  let size=null;
- function update({camera,mode,focus,isFound=()=>true,pulse=()=>0}){
+ function update({camera,mode,focus,isFound=()=>true,pulse=()=>0,isWarp=()=>false}){
   const width=container.clientWidth,height=container.clientHeight;
   if(!size||size.width!==width||size.height!==height||size.mode!==mode){
    const origin=container.getBoundingClientRect();
@@ -45,7 +45,7 @@ export function createPoiMarkers({container,registry,baseElevation,mobile=false}
   displayed=layoutPoiMarkers(candidates,{...size,mobile});
   for(let i=0;i<max;i++){
    const {node,icon,name}=pool[i],c=displayed[i];node.hidden=!c;if(!c)continue;
-   node.classList.toggle('discovering',pulse(c.point.id)>0);
+   node.classList.toggle('discovering',pulse(c.point.id)>0);node.classList.toggle('warp-open',isWarp(c.point.id));
    node.dataset.poiId=c.point.id;node.dataset.tileId=c.point.tileId;
    const style=POI_CATEGORIES[c.point.category];
    if(pool[i].category!==c.point.category+theme){

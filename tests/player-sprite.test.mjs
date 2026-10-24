@@ -54,3 +54,9 @@ test('optional absence preserves old avatar, present invalid metadata fails visi
   loader:{loadAsync:async()=>({image:{width:10,height:10},dispose(){disposed=true;}})}}),/dimensions/);
  assert.equal(disposed,true);
 });
+
+test('authored character frames switch without replacing texture, position or physics',()=>{
+ const c=fixture();c.characters=[{id:'cat',animations:{idle:[0],walk:[0]}},{id:'rabbit',animations:{idle:[1],walk:[1]}}];
+ const a=createSpriteAvatar(c,new THREE.Texture());a.group.position.set(2,3,4);assert.equal(a.switchCharacter(),'rabbit');assert.equal(a.snapshot().character,'rabbit');assert.deepEqual(a.group.position.toArray(),[2,3,4]);assert.equal(a.switchCharacter(),'cat');a.dispose();
+ c.characters[1].animations.walk=[99];assert.throws(()=>validateSpriteConfig(c));
+});

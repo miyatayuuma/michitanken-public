@@ -8,9 +8,9 @@ const keyFor=e=>e.key.toLowerCase();
  * Return intention only; the deterministic movement system owns position and collision.
  * Mobile: left thumb for movement, drag on canvas for looking, right thumb to run.
  */
-export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,onModeToggle=()=>{},onInteract=()=>{},onBack=()=>{},onMapControl=()=>{},onActivity=()=>{},isActive=()=>true}){
+export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,onModeToggle=()=>{},onInteract=()=>{},onBack=()=>{},onCharacter=()=>{},onMapControl=()=>{},onActivity=()=>{},isActive=()=>true}){
   const abort=new AbortController(),{signal}=abort;
-  const keys=new Set(),pressed=new Map();
+  const keys=new Set(),pressed=new Map();let inputMode='walk';const modeForKeys=()=>inputMode;
   let joyId=null,runId=null,runHeld=false,joyX=0,joyY=0;
   const lookPointers=new Map();
   let pinchDistance=null;
@@ -39,7 +39,7 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
     }
   });
   function pollGamepad(dt,mode='walk'){
-    if(document.hidden){resetGamepad();return;}
+    inputMode=mode;if(document.hidden){resetGamepad();return;}
     if(mode==='map'&&keys.size)onMapControl({moveX:(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0),moveY:(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)},Math.min(dt,.05));
     const pad=getPad();
     if(!pad){resetGamepad();return;}
@@ -66,13 +66,14 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
     if(window.parent===window&&buttons[0]&&!padButtons[0])onInteract();
     if(buttons[2]&&!padButtons[2])onModeToggle();
     if(buttons[1]&&!padButtons[1])onBack();
+    if(buttons[3]&&!padButtons[3])onCharacter();
     padButtons=buttons;
   }
   listen(window,'gamepaddisconnected',resetGamepad);
   const movementKeys=new Set(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','shift']);
   listen(window,'keydown',e=>{
     const key=keyFor(e);onActivity();
-    if(!e.repeat&&!e.ctrlKey&&!e.altKey&&!e.metaKey){if(key==='e'){onInteract();e.preventDefault();}if(key==='m'||key==='x'){onModeToggle();e.preventDefault();}if(key==='escape')onBack();}
+    if(!e.repeat&&!e.ctrlKey&&!e.altKey&&!e.metaKey){if(key==='e'){onInteract();e.preventDefault();}if(key==='m'||key==='x'){onModeToggle();e.preventDefault();}if(key==='escape')onBack();if(key==='c'||key==='y'){onCharacter();e.preventDefault();}if(key==='enter'&&modeForKeys()==='map'){onInteract();e.preventDefault();}}
     if(e.repeat&&keys.has(key))return;
     if(movementKeys.has(key)&&!e.ctrlKey&&!e.altKey&&!e.metaKey){
       keys.add(key);e.preventDefault();
@@ -94,7 +95,7 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
     joyX=ox/max;joyY=-oy/max;knob.style.transform=`translate(${ox}px, ${oy}px)`;
   };
   listen(joystick,'pointerdown',e=>{
-    if(joyId!==null)return;
+    if(!isActive()||joyId!==null)return;
     joyId=e.pointerId;pressed.set('joystick',e.pointerId);
     joystick.setPointerCapture(e.pointerId);updateJoystick(e);e.preventDefault();
   });
@@ -104,7 +105,7 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
   listen(joystick,'pointercancel',stopJoy);
   listen(joystick,'lostpointercapture',stopJoy);
   listen(runButton,'pointerdown',e=>{
-    runId=e.pointerId;runHeld=true;runButton.classList.add('holding');
+    if(!isActive())return;runId=e.pointerId;runHeld=true;runButton.classList.add('holding');
     runButton.setPointerCapture(e.pointerId);e.preventDefault();
   });
   const stopRun=e=>{if(e.pointerId===runId){runId=null;runHeld=false;runButton.classList.remove('holding');}};
@@ -120,7 +121,7 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
     canvas.setPointerCapture(e.pointerId);e.preventDefault();
   });
   listen(canvas,'pointermove',e=>{
-    if(!lookPointers.has(e.pointerId))return;
+    if(!isActive()||!lookPointers.has(e.pointerId))return;
     const old=lookPointers.get(e.pointerId),dx=e.clientX-old.x,dy=e.clientY-old.y;
     lookPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(lookPointers.size===1){onLook(-dx*0.006,-dy*0.0045);}
@@ -147,7 +148,7 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
       };
     },
     pollGamepad,
-    reset:resetInput,
+    reset(){resetInput();resetGamepad();},
     destroy(){
       abort.abort();resetInput();resetGamepad();
       if(window.__dreamcoreGamepadCursorMode===cursorMode)delete window.__dreamcoreGamepadCursorMode;

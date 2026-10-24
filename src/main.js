@@ -1,3 +1,4 @@
+import {createWarpRegistry,canWarp,requiredLandingTiles,validateLanding,createWarpController} from '../lib/warp.mjs';
 import {createLandmarkFX} from './landmark-fx.js';
 import {createExplorationMap} from './exploration-map.js';
 import {createMichiSound} from './sound.js';
@@ -166,7 +167,7 @@ async function init(north,manifest){
  }
  const wideMap=false;
  const wideLayer=null;
- let map2d=null;
+ let map2d=null,warpRegistry=null,warpController=null;
  const landmarkFX=createLandmarkFX(scene,north.terrain.min);
  const sound=createMichiSound();
  let elapsed=0,streamer=null,playerState=null,mode='walk';
@@ -385,12 +386,13 @@ async function init(north,manifest){
  const gameInput=createGameInput({
    canvas:renderer.domElement,joystick:document.querySelector('#joystick'),
    knob:document.querySelector('#joystick-knob'),runButton:document.querySelector('#run'),
-   isActive:()=>mode==='walk',
-   onLook(dx,dy){cameraYaw+=dx;cameraPitch=Math.min(1.1,Math.max(.2,cameraPitch+dy));},
-   onZoom(ratio){cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));},
+   isActive:()=>mode==='walk'&&!warpController?.busy,
+   onLook(dx,dy){if(mode!=='walk'||warpController?.busy)return;cameraYaw+=dx;cameraPitch=Math.min(1.1,Math.max(.2,cameraPitch+dy));},
+   onZoom(ratio){if(mode!=='walk'||warpController?.busy)return;cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));},
    onModeToggle(){changeMode(mode==='walk'?'map':'walk');},
-   onInteract(){sound.activate();if(mode==='map')map2d?.select();else exploration?.collect();},
-   onBack(){if(mode==='map')changeMode('walk');},
+   onInteract(){sound.activate();if(warpController?.busy)return;if(mode==='map')map2d?.select();else exploration?.collect();},
+   onBack(){if(warpController?.busy){warpController.cancel();return;}if(mode==='map'&&!map2d?.cancel())changeMode('walk');},
+   onCharacter(){switchCharacter();},
    onActivity(){sound.activate();},
    onMapControl(input,dt){if(mode==='map')map2d?.move(input,dt);}
 
@@ -445,6 +447,7 @@ async function init(north,manifest){
    avatarPosition();followCamera(0,true);updateHud();streamer.update(playerState.x,playerState.z);
  }
  function changeMode(next){
+   if(warpController?.busy)warpController.cancel();
    if(next==='map'&&!map2d)return;
    mode=next;controls.enabled=false;gameInput.reset();accumulator=0;
    document.querySelector('#app').dataset.mode=mode;
@@ -458,7 +461,7 @@ async function init(north,manifest){
    if(next==='walk'){followCamera(0,true);streamer.update(playerState.x,playerState.z);}
  }
  document.querySelector('#reset').onclick=async()=>{
-   if(mode==='map')return;
+   if(mode!=='walk'||warpController?.busy)return;
    try{
      // Start tile may have been GPU-unloaded after a long walk south.
      // Rehydrate collision + terrain BEFORE teleporting back to spawn.
@@ -469,6 +472,20 @@ async function init(north,manifest){
      status.classList.add('failed');status.textContent='開始地点の読込に失敗: '+e.message;
    }
  };
+ const characterButton=document.createElement('button');characterButton.id='character-switch';characterButton.textContent='キャラ ↔';characterButton.setAttribute('aria-label','猫とうさぎを切り替える（C / Y）');characterButton.hidden=!playerSprite;container.append(characterButton);
+ function switchCharacter(){if(mode!=='walk'||warpController?.busy)return;const c=playerSprite?.switchCharacter();if(c){characterButton.dataset.character=c;avatarPosition();}}
+ characterButton.onclick=switchCharacter;
+ warpController=createWarpController({
+  allowed:id=>mode==='map'&&canWarp(warpRegistry,map2d.store,id),
+  load:async id=>{const l=warpRegistry.get(id).landing;await Promise.all(requiredLandingTiles(manifest,l.position[0],l.position[2]).map(id=>streamer.ensure(id)));},
+  validate:id=>validateLanding(world,warpRegistry.get(id).landing),
+  capture:()=>({player:{...playerState},yaw:cameraYaw,pitch:cameraPitch,distance:cameraDistance,camera:camera.position.clone(),rotation:camera.quaternion.clone(),target:controls.target.clone()}),
+  commit:result=>{playerState={...playerState,x:result.x,y:result.y,z:result.z,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};cameraYaw=result.yaw;playerSprite?.reset();footCache=null;avatarPosition();changeModeAfterWarp();followCamera(0,true);updateHud();},
+  restore:s=>{playerState=s.player;cameraYaw=s.yaw;cameraPitch=s.pitch;cameraDistance=s.distance;camera.position.copy(s.camera);camera.quaternion.copy(s.rotation);controls.target.copy(s.target);avatarPosition();updateHud();},
+  transition:async signal=>{container.classList.add('warp-transition');if(!matchMedia('(prefers-reduced-motion: reduce)').matches)await new Promise(resolve=>setTimeout(resolve,140));if(signal.aborted)throw Error('cancelled');},
+  onBusy:value=>{gameInput.reset();accumulator=0;map2d?.setBusy(value);characterButton.disabled=value;if(!value)container.classList.remove('warp-transition');}
+ });
+ function changeModeAfterWarp(){mode='walk';document.querySelector('#app').dataset.mode=mode;modeButton.textContent='マップ';modeButton.setAttribute('aria-label','全体マップを開く');modeButton.setAttribute('aria-expanded','false');container.dataset.overviewReady='false';map2d?.setOpen(false);gameInput.reset();}
  modeButton.onclick=()=>changeMode(mode==='walk'?'map':'walk');
  for(const name of ['roads','buildings'])document.querySelector('#'+name).onclick=()=>{
    layerVisibility[name]=!layerVisibility[name];
@@ -545,6 +562,9 @@ async function init(north,manifest){
        levels:[...visuals.values()].map(v=>({id:v.entry.id,level:v.level,visible:v.root.visible}))
      }),
      map:()=>map2d?.snapshot(),
+     warp:id=>warpController.warp(id),
+     warpBusy:()=>warpController.busy,
+     camera:()=>({position:camera.position.toArray(),quaternion:camera.quaternion.toArray(),yaw:cameraYaw,pitch:cameraPitch,distance:cameraDistance}),
      sound:()=>sound.snapshot(),
      exploration:()=>exploration?.snapshot(),
      wildlifeSpots:()=>wildlife?.candidatePositions||[],
@@ -571,7 +591,7 @@ async function init(north,manifest){
    frame=requestAnimationFrame(draw);
    const rawDt=clock.getDelta(),dt=Math.min(rawDt,.16);
    gameInput.pollGamepad(dt,mode);
-   if(mode==='walk'){
+   if(mode==='walk'&&!warpController?.busy){
      accumulator+=dt;const intent=gameInput.getIntent();let n=0;
      while(accumulator>=fixedStep&&n<10){
        playerState=advancePlayer(playerState,{...intent,yaw:cameraYaw},world,fixedStep);
@@ -581,7 +601,7 @@ async function init(north,manifest){
      hudTime+=dt;if(hudTime>.13){updateHud();hudTime=0;}
    }else{accumulator=0;controls.update();}
    streamTime+=dt;if(streamTime>.2){
-     if(mode==='walk')streamer.update(playerState.x,playerState.z);streamTime=0;
+     if(mode==='walk'&&!warpController?.busy)streamer.update(playerState.x,playerState.z);streamTime=0;
    }
 
    qualityTime+=dt;
@@ -600,7 +620,7 @@ async function init(north,manifest){
    sound.update(map2d?.biomeAt(playerState.x,playerState.z)||'urban',dt);
    exploration?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
    wildlife?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
-   poiMarkers?.update({camera,mode,focus:playerState,isFound:id=>map2d?.isFound(id),pulse:id=>map2d?.pulse(id)});
+   poiMarkers?.update({camera,mode,focus:playerState,isFound:id=>map2d?.isFound(id),pulse:id=>map2d?.pulse(id),isWarp:id=>canWarp(warpRegistry,map2d?.store||{has:()=>false},id)});
    if(mode==='walk')renderer.render(scene,camera);
    frameIndex++;
    frameDurations.push(rawDt*1000);
@@ -621,12 +641,13 @@ async function init(north,manifest){
      metricTime=0;
    }
  }
- try{map2d=await createExplorationMap({container,registry:poiRegistry||{points:[]},baseURL:import.meta.env.BASE_URL,onDiscover:p=>{landmarkFX.discover(p);sound.se('discover');},onSelect:()=>sound.se('confirm')});map2d.update(playerState.x,playerState.z,0);modeButton.disabled=false;}catch(e){modeButton.disabled=true;container.dataset.mapError='true';console.warn(e);}
+ try{const response=await fetch(import.meta.env.BASE_URL+'data/warps.json');if(response.ok)warpRegistry=createWarpRegistry(await response.json(),poiRegistry,manifest);}catch(e){console.warn('Warp registry disabled',e);}
+ try{map2d=await createExplorationMap({container,registry:poiRegistry||{points:[]},baseURL:import.meta.env.BASE_URL,warps:warpRegistry,onWarp:async id=>{const result=await warpController.warp(id);if(!result.ok)map2d?.failure();},onDiscover:p=>{const unlocked=canWarp(warpRegistry,map2d?.store||{has:()=>true},p.id);landmarkFX.discover(p,unlocked);sound.se(unlocked?'unlock':'discover');},onSelect:()=>sound.se('confirm')});map2d.update(playerState.x,playerState.z,0);modeButton.disabled=false;}catch(e){modeButton.disabled=true;container.dataset.mapError='true';console.warn(e);}
  container.dataset.appReady='true';
  reportStreaming(streamer.snapshot());
  draw();
  window.addEventListener('pagehide',()=>{
-   cancelAnimationFrame(frame);observer.disconnect();gameInput.destroy();controls.dispose();
+   cancelAnimationFrame(frame);observer.disconnect();warpController?.cancel();gameInput.destroy();controls.dispose();
    longTaskObserver?.disconnect();
    wideLayer?.dispose();
    landmarkFX.dispose();map2d?.dispose();sound.dispose();exploration?.dispose();wildlife?.dispose();poiMarkers?.dispose();biomeDebug?.dispose();
