@@ -1,0 +1,191 @@
+[
+  {
+    "device": "desktop",
+    "view": "walk",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "desktop",
+    "view": "near",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "desktop",
+    "view": "map",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "desktop",
+    "view": "zoom",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "desktop",
+    "view": "warp",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "desktop",
+    "view": "touch",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "desktop",
+    "view": "settings",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "desktop",
+    "view": "loading",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "desktop",
+    "view": "error",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "mobile",
+    "view": "walk",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "mobile",
+    "view": "near",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "mobile",
+    "view": "map",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "mobile",
+    "view": "zoom",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "mobile",
+    "view": "warp",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "mobile",
+    "view": "touch",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "mobile",
+    "view": "settings",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "mobile",
+    "view": "loading",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "mobile",
+    "view": "error",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "landscape",
+    "view": "walk",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "landscape",
+    "view": "near",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "landscape",
+    "view": "map",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "landscape",
+    "view": "zoom",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "landscape",
+    "view": "warp",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "landscape",
+    "view": "touch",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "landscape",
+    "view": "settings",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "landscape",
+    "view": "loading",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  },
+  {
+    "device": "landscape",
+    "view": "error",
+    "overflow": false,
+    "smallTargets": [],
+    "errors": []
+  }
+]
