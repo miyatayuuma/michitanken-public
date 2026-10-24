@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {natureTint} from '../lib/appearance.mjs';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {terrainMeshHeight} from '../lib/geo.mjs';
 
@@ -148,8 +149,8 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=540}={}){
  return out;
 }
 
-export function createVegetationRenderer({baseURL}){
- const loader=new GLTFLoader(),templates=new Map();
+export function createVegetationRenderer({baseURL,loader=new GLTFLoader()}){
+ const templates=new Map();
  const url=name=>baseURL.replace(/\/?$/,'/')+'assets/nature/'+name+'.glb';
  async function getModel(name){
   if(!templates.has(name))templates.set(name,loader.loadAsync(url(name)).then(gltf=>{
@@ -183,6 +184,7 @@ export function createVegetationRenderer({baseURL}){
      batch.name='nature-'+name;
      batch.frustumCulled=false; // Parent tile group performs AABB culling.
      const object=new THREE.Object3D(),matrix=new THREE.Matrix4();
+     const tintable=options.individualColors!==false&&!(Array.isArray(material)?material:[material]).some(m=>m.map);
      items.forEach((item,index)=>{
       const scale=item.height/unit;
       object.position.set(item.x,terrainMeshHeight(field.terrain,item.x,item.z)-field.terrain.min+.05-box.min.y*scale,item.z);
@@ -190,8 +192,11 @@ export function createVegetationRenderer({baseURL}){
       object.scale.setScalar(scale);object.updateMatrix();
       matrix.multiplyMatrices(object.matrix,source.matrixWorld);
       batch.setMatrixAt(index,matrix);
+      const tint=tintable&&natureTint(item.kind,item.x+entry.offset[0],item.z+entry.offset[1]);
+      if(tint)batch.setColorAt(index,new THREE.Color().setRGB(...tint));
      });
      batch.instanceMatrix.needsUpdate=true;
+     if(batch.instanceColor)batch.instanceColor.needsUpdate=true;
      group.add(batch);
     }
    }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {buildingColors,cssColor} from '../lib/appearance.mjs';
 import {gridSample} from '../lib/geo.mjs';
 import {manifestBounds} from '../lib/tiles.mjs';
 
@@ -41,7 +42,7 @@ function makeCanvas(){
  * never retained by this atlas. Walking/close map tiles remain independent and
  * render above this deliberately recessed fallback geometry.
  */
-export function createWideOverview(manifest,baseElevation){
+export function createWideOverview(manifest,baseElevation,{colorsEnabled=true}={}){
  if(!Number.isFinite(baseElevation))throw Error('Invalid elevation datum');
  const bounds=manifestBounds(manifest),size=manifest.size;
  const cells=terrainCellsPerTile(manifest.tiles.length);
@@ -106,7 +107,7 @@ export function createWideOverview(manifest,baseElevation){
    if(!line.tunnel)paintPath(sheets.roads,entry,line.points,{color:'#5e6b6e',width:line.width||2.5});
   }
   for(const building of field.osm?.buildings||[])
-   paintPath(sheets.buildings,entry,building.footprint,{color:'#b47968',fill:true});
+   paintPath(sheets.buildings,entry,building.footprint,{color:cssColor(buildingColors(building,entry,colorsEnabled).roof),fill:true});
  }
  function finish(){
   if(seen.size!==manifest.tiles.length)throw Error('Incomplete wide atlas: '+seen.size+'/'+manifest.tiles.length);
@@ -123,7 +124,8 @@ export function createWideOverview(manifest,baseElevation){
    const texture=new THREE.CanvasTexture(sheet.canvas);
    texture.colorSpace=THREE.SRGBColorSpace;
    texture.anisotropy=1;
-   const material=new THREE.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,
+   const Material=name==='buildings'&&colorsEnabled?THREE.MeshLambertMaterial:THREE.MeshBasicMaterial;
+   const material=new Material({map:texture,transparent:true,depthWrite:false,
     side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2});
    const mesh=new THREE.Mesh(geometry,material);
    mesh.name='wide-overview-'+name;

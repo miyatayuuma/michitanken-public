@@ -1,3 +1,5 @@
+import {loadPoiRegistry,createPoiMarkers} from './poi-markers.js';
+import {addBuildings} from './buildings.js';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {gridSample} from '../lib/geo.mjs';
@@ -96,34 +98,6 @@ function addRoads(field,parent,layerSet,detail='full'){
  }
  parent.add(group);layerSet.roads=group;
 }
-function addBuildings(field,parent,layerSet,detail='full'){
- const group=new THREE.Group();group.name='buildings';
- const walls=[],roofs=[];
- for(const b of field.osm.buildings){
-  const p=b.footprint;if(p.length<3)continue;
-  const base=p.reduce((sum,[x,z])=>sum+localY(field,x,z),0)/p.length,bottom=base+.15,top=base+b.height;
-  if(detail==='overview'){
-   // Tiny distant buildings need roofs, not hundreds of unseen wall triangles.
-   const xs=p.map(v=>v[0]),zs=p.map(v=>v[1]);
-   const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
-   if(maxX-minX<.05||maxZ-minZ<.05)continue;
-   roofs.push(minX,top,minZ,maxX,top,minZ,minX,top,maxZ,
-     maxX,top,minZ,maxX,top,maxZ,minX,top,maxZ);
-   continue;
-  }
-  const shape=new THREE.Shape();shape.moveTo(p[0][0],-p[0][1]);for(let i=1;i<p.length;i++)shape.lineTo(p[i][0],-p[i][1]);shape.closePath();
-  const roof=new THREE.ShapeGeometry(shape);roof.rotateX(-Math.PI/2);roof.translate(0,top,0);
-  const nongrid=roof.index?roof.toNonIndexed():roof;
-  roofs.push(...nongrid.getAttribute('position').array);if(nongrid!==roof)nongrid.dispose();roof.dispose();
-  for(let i=0;i<p.length;i++){const a=p[i],c=p[(i+1)%p.length];walls.push(
-   a[0],bottom,a[1],c[0],bottom,c[1],a[0],top,a[1],
-   c[0],bottom,c[1],c[0],top,c[1],a[0],top,a[1]);
-  }
- }
- if(walls.length){const mesh=new THREE.Mesh(geometryFromTriangles(walls),new THREE.MeshLambertMaterial({color:0xd3d7cf,side:THREE.DoubleSide}));mesh.renderOrder=3;group.add(mesh);}
- if(roofs.length){const mesh=new THREE.Mesh(geometryFromTriangles(roofs),new THREE.MeshLambertMaterial({color:0xb47968,side:THREE.DoubleSide}));mesh.renderOrder=3;group.add(mesh);}
- parent.add(group);layerSet.buildings=group;
-}
 function makeAvatar(){
  const group=new THREE.Group();group.name='player-avatar';
  const body=new THREE.Mesh(new THREE.CapsuleGeometry(.29,.78,6,12),new THREE.MeshLambertMaterial({color:0x244f80}));
@@ -152,7 +126,16 @@ async function init(north,manifest){
  scene.add(new THREE.HemisphereLight(0xf5faff,0x83917b,2.1));
  const sun=new THREE.DirectionalLight(0xffffff,2);sun.position.set(-180,320,120);scene.add(sun);
  const world=createTiledWorld(manifest);
+ let poiRegistry=null,poiMarkers=null;
+ if(new URLSearchParams(location.search).get('markers')!=='off'){
+  try{
+   poiRegistry=await loadPoiRegistry({baseURL:import.meta.env.BASE_URL,manifest});
+   poiMarkers=createPoiMarkers({container,registry:poiRegistry,baseElevation:north.terrain.min,mobile:coarsePointer});
+  }catch(error){console.warn('Optional public markers unavailable:',error);container.dataset.poiError='true';}
+ }
  const visuals=new Map(),layerVisibility={roads:true,buildings:true};
+ const colorsEnabled=new URLSearchParams(location.search).get('colors')!=='off';
+ const natureColorsEnabled=new URLSearchParams(location.search).get('natureColors')!=='off';
  const flatWater=new URLSearchParams(location.search).get('water')==='flat';
  const natureEnabled=new URLSearchParams(location.search).get('nature')!=='off';
  const wildlifeEnabled=natureEnabled&&new URLSearchParams(location.search).get('wildlife')!=='off';
@@ -267,7 +250,7 @@ async function init(north,manifest){
        addRoads(visual.field,temp,next,target);
        await nextFrame();
        if(visual.removed){disposeObject(temp);break;}
-       addBuildings(visual.field,temp,next,target);
+       addBuildings(visual.field,temp,next,target,visual.entry,colorsEnabled);
        await nextFrame();
        if(visual.removed||visual.requestedLevel!==target){
          disposeObject(temp);continue;
@@ -309,7 +292,7 @@ async function init(north,manifest){
      const overlay=await vegetationOverlay(visual.entry);
      if(visual.removed||!overlay)return;
      wildlife?.register(visual.entry,visual.field,overlay);
-     const group=await natureRenderer.build(visual.entry,visual.field,overlay,{maxTotal:natureInstanceBudget({coarsePointer,memoryGiB})});
+     const group=await natureRenderer.build(visual.entry,visual.field,overlay,{maxTotal:natureInstanceBudget({coarsePointer,memoryGiB}),individualColors:natureColorsEnabled});
      if(visual.removed){disposeObject(group);return;}
      if(!group.userData.vegetationCount)return;
      visual.nature=group;visual.root.add(group);updateLayerMetrics();
@@ -326,7 +309,7 @@ async function init(north,manifest){
    await nextFrame();
    addRoads(field,root,layers,level);
    await nextFrame();
-   addBuildings(field,root,layers,level);
+   addBuildings(field,root,layers,level,entry,colorsEnabled);
    await nextFrame();
    addCrossingMarkers(field,root,layers);
    layers.outline=addTileBorder(field,root,entry);
@@ -515,7 +498,7 @@ async function init(north,manifest){
        if(wideLayer)return;
        // One fixed-size fallback atlas covers the full map while only nearby
        // tiles retain their normal detail/collision meshes.
-       const builder=createWideOverview(manifest,world.baseElevation);
+       const builder=createWideOverview(manifest,world.baseElevation,{colorsEnabled});
        await streamer.scanAll({concurrency:2,signal,onTile:async(entry,field)=>{
          if(signal.aborted)return;
          const foliage=await vegetationOverlay(entry).catch(error=>{
@@ -618,10 +601,14 @@ async function init(north,manifest){
      },
      state:()=>({...playerState,tiles:streamer.snapshot()}),
      avatar:()=>playerSprite?.snapshot()||{kind:'model'},
+     poi:()=>({total:poiRegistry?.points.length||0,visible:poiMarkers?.snapshot()||[]}),
      renderStats:()=>({
        ...geometryStats(visuals.values()),
        pixelRatio:renderer.getPixelRatio(),
        memory:{...renderer.info.memory},
+       geometryBytes:(()=>{const buffers=new Set();scene.traverse(o=>{if(o.geometry){for(const a of Object.values(o.geometry.attributes))buffers.add(a.array.buffer);if(o.geometry.index)buffers.add(o.geometry.index.array.buffer);}if(o.instanceColor)buffers.add(o.instanceColor.array.buffer);if(o.instanceMatrix)buffers.add(o.instanceMatrix.array.buffer);});return [...buffers].reduce((n,b)=>n+b.byteLength,0);})(),
+       heapBytes:performance.memory?.usedJSHeapSize??null,
+       markers:poiMarkers?.snapshot().length||0,
        render:{...renderer.info.render},
        frameP95Ms:Number(container.dataset.frameP95Ms||0),
        longTaskCount:longTaskState.count,
@@ -715,6 +702,7 @@ async function init(north,manifest){
    updateVisibleTiles();
    playerSprite?.update({state:playerState,camera,walking:mode==='walk'});
    wildlife?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
+   poiMarkers?.update({camera,mode,focus:mode==='walk'?playerState:controls.target});
    renderer.render(scene,camera);
    frameIndex++;
    frameDurations.push(rawDt*1000);
@@ -742,7 +730,7 @@ async function init(north,manifest){
    cancelAnimationFrame(frame);observer.disconnect();gameInput.destroy();controls.dispose();
    overviewAbort?.abort();longTaskObserver?.disconnect();
    wideLayer?.dispose();
-   wildlife?.dispose();
+   wildlife?.dispose();poiMarkers?.dispose();
    void streamer.dispose();
    natureRenderer.dispose();
    if(playerSprite)playerSprite.dispose();
