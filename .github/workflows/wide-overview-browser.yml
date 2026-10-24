@@ -65,6 +65,7 @@ jobs:
           node scripts/browser-mt02r-mt03.mjs "$BIOME_FIXTURE" artifacts/mt02r-mt03
           node scripts/generate-exploration.mjs "$BIOME_FIXTURE"
           node scripts/browser-exploration.mjs "$BIOME_FIXTURE" artifacts/mt04-mt06
+          node scripts/browser-exploration-walk.mjs "$BIOME_FIXTURE" artifacts/mt04-mt06
           python scripts/audit-spawn-safety.py "$BIOME_FIXTURE" "$BIOME_FIXTURE/public/data/biomes.json" artifacts/mt02r-mt03/safety.json
       - name: Publish fictional mobile screenshot
         if: always()
