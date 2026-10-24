@@ -1,0 +1,12 @@
+12:07:40 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+browser-wide-overview.mjs Task5C legacy 3x3 browser baseline: PASS
+GC201 synthetic browser walk/map/A/pan/zoom/disconnect: PASS
+{"status":"PASS","overview":{"tiles":25,"cells":12,"triangles":7200,"textures":3,"texturePixels":1536},"overviewFullTileCount":1,"walkTileCount":1,"gpuGeometries":9}
+
+browser-player-sprite.mjs Synthetic GPU alpha and front/back depth acceptance: PASS
+{"status":"PASS","mobile":false,"frames":[0,1,2],"groundContact":true,"keyboard":true,"touch":false,"syntheticGamepad":true}
+{"status":"PASS","mobile":true,"frames":[0,1,2],"groundContact":true,"keyboard":true,"touch":true,"syntheticGamepad":true}
+
+browser-mt01-mt02.mjs {"status":"PASS","mobile":false,"registry":6,"mapVisible":2,"fullOverviewColors":true,"overlap":false,"edgeAndReload":true,"inputTransparent":true}
+{"status":"PASS","mobile":true,"registry":6,"mapVisible":2,"fullOverviewColors":true,"overlap":false,"edgeAndReload":true,"inputTransparent":true}
+

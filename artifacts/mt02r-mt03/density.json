@@ -1,0 +1,27 @@
+{
+  "status": "PASS",
+  "rows": [
+    {
+      "mobile": false,
+      "points": 40,
+      "visible": 10,
+      "labels": [
+        "架空の神社",
+        "架空の公園",
+        "架空の広場"
+      ],
+      "duplicateNames": 0
+    },
+    {
+      "mobile": true,
+      "points": 40,
+      "visible": 10,
+      "labels": [
+        "架空の神社",
+        "架空の公園",
+        "架空の広場"
+      ],
+      "duplicateNames": 0
+    }
+  ]
+}

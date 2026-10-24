@@ -1,3 +1,4 @@
+import {createBiomeDebug} from './biome-debug.js';
 import {loadPoiRegistry,createPoiMarkers} from './poi-markers.js';
 import {addBuildings} from './buildings.js';
 import * as THREE from 'three';
@@ -126,7 +127,9 @@ async function init(north,manifest){
  scene.add(new THREE.HemisphereLight(0xf5faff,0x83917b,2.1));
  const sun=new THREE.DirectionalLight(0xffffff,2);sun.position.set(-180,320,120);scene.add(sun);
  const world=createTiledWorld(manifest);
+ let biomeDebug=null;
  let poiRegistry=null,poiMarkers=null;
+ createBiomeDebug({scene,container,baseElevation:north.terrain.min,baseURL:import.meta.env.BASE_URL}).then(v=>{biomeDebug=v;}).catch(error=>{container.dataset.biomeError='true';console.warn(error);});
  if(new URLSearchParams(location.search).get('markers')!=='off'){
   try{
    poiRegistry=await loadPoiRegistry({baseURL:import.meta.env.BASE_URL,manifest});
@@ -601,6 +604,9 @@ async function init(north,manifest){
      },
      state:()=>({...playerState,tiles:streamer.snapshot()}),
      avatar:()=>playerSprite?.snapshot()||{kind:'model'},
+     setAuditView:(x,z,distance=160)=>{if(mode!=='map')return false;const y=terrainHeight(world,x,z);controls.target.set(x,y,z);camera.position.set(x,y+distance,z+distance*.6);controls.update();return true;},
+     biomes:()=>biomeDebug?{totals:biomeDebug.data.totals,candidates:biomeDebug.data.candidates.length,seams:biomeDebug.data.seams.length}:null,
+     setMarkerTheme:value=>poiMarkers?.setTheme(value),
      poi:()=>({total:poiRegistry?.points.length||0,visible:poiMarkers?.snapshot()||[]}),
      renderStats:()=>({
        ...geometryStats(visuals.values()),
@@ -730,7 +736,7 @@ async function init(north,manifest){
    cancelAnimationFrame(frame);observer.disconnect();gameInput.destroy();controls.dispose();
    overviewAbort?.abort();longTaskObserver?.disconnect();
    wideLayer?.dispose();
-   wildlife?.dispose();poiMarkers?.dispose();
+   wildlife?.dispose();poiMarkers?.dispose();biomeDebug?.dispose();
    void streamer.dispose();
    natureRenderer.dispose();
    if(playerSprite)playerSprite.dispose();

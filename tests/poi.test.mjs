@@ -25,7 +25,7 @@ test('screen layout bounds icons AND labels, enforces distance/limits and reserv
  for(const mode of ['walk','map'])for(const mobile of [false,true]){
   const exclusions=[{left:10,right:180,top:310,bottom:500}];
   const out=layoutPoiMarkers(candidates,{width:650,height:500,mode,mobile,exclusions});
-  assert.ok(out.length>0);assert.ok(out.length<=(mode==='walk'?12:mobile?18:24));
+  assert.ok(out.length>0);assert.ok(out.length<=(mode==='walk'?3:mobile?12:18));
   out.forEach((a,i)=>{assert.ok(!exclusions.some(b=>rectanglesOverlap(a.box,b)));out.slice(i+1).forEach(b=>assert.ok(!rectanglesOverlap(a.box,b.box,8)));});
   assert.deepEqual(out,layoutPoiMarkers([...candidates].reverse(),{width:650,height:500,mode,mobile,exclusions}));
  }
@@ -34,4 +34,14 @@ test('screen layout bounds icons AND labels, enforces distance/limits and reserv
 test('optional POI absence is supported but malformed registry is surfaced',async()=>{
  const fetcher=async()=>new Response('',{status:404});const r=await loadPoiRegistry({baseURL:'/',manifest,fetcher});assert.equal(r.points.length,0);
  await assert.rejects(loadPoiRegistry({baseURL:'/',manifest,fetcher:async()=>Response.json({schema:9})}),/registry/);
+});
+
+test('walking hides recognisable water/bridges and reserves only three landmarks',()=>{
+ const candidates=Array.from({length:10},(_,i)=>({point:{...point('p:'+i),category:i===0?'water':i===1?'bridge':'park'},x:40+i*60,y:100,depth:0,distance:20,near:false}));
+ const out=layoutPoiMarkers(candidates,{width:800,height:600,mode:'walk'});assert.equal(out.length,3);assert.ok(out.every(c=>c.point.category==='park'));
+});
+
+test('dense overview retains place icons but labels an identical name only once',()=>{
+ const candidates=Array.from({length:5},(_,i)=>({point:point('p:'+i),x:150+i*180,y:100,depth:0,distance:20,near:true}));
+ const out=layoutPoiMarkers(candidates,{width:1200,height:600,mode:'map'});assert.equal(out.length,5);assert.equal(out.filter(c=>c.label).length,1);
 });
