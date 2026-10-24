@@ -8,7 +8,7 @@ const keyFor=e=>e.key.toLowerCase();
  * Return intention only; the deterministic movement system owns position and collision.
  * Mobile: left thumb for movement, drag on canvas for looking, right thumb to run.
  */
-export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,onModeToggle=()=>{},onInteract=()=>{},onJournal=()=>{},onBack=()=>{},onMapControl=()=>{},isActive=()=>true}){
+export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,onModeToggle=()=>{},onInteract=()=>{},onBack=()=>{},onMapControl=()=>{},onActivity=()=>{},isActive=()=>true}){
   const abort=new AbortController(),{signal}=abort;
   const keys=new Set(),pressed=new Map();
   let joyId=null,runId=null,runHeld=false,joyX=0,joyY=0;
@@ -35,11 +35,12 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
       e.data?.type!==GAMEPAD_MESSAGE)return;
     if(e.data.action==='release-all'){resetGamepad();return;}
     if(e.data.action==='button'&&e.data.button===0&&e.data.phase==='down'&&padArmed){
-      onModeToggle();
+      onActivity();onInteract();
     }
   });
   function pollGamepad(dt,mode='walk'){
     if(document.hidden){resetGamepad();return;}
+    if(mode==='map'&&keys.size)onMapControl({moveX:(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0),moveY:(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)},Math.min(dt,.05));
     const pad=getPad();
     if(!pad){resetGamepad();return;}
     const signature=pad.index+':'+pad.id+':'+pad.mapping;
@@ -55,26 +56,25 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
     padX=left.x;padY=left.y;padActive=Math.hypot(padX,padY)>0;
     padRun=!!buttons[7];
     const seconds=clamp(Number.isFinite(dt)?dt:0,0,0.05);
+    if(buttons.some(Boolean)||left.x||left.y||right.x||right.y)onActivity();
     if(mode==='walk'){
       if(isActive()&&seconds&&(right.x||right.y))onLook(-right.x*1.8*seconds,-right.y*1.1*seconds);
     }else if(mode==='map'){
-      onMapControl({moveX:left.x,moveY:left.y,lookX:right.x,lookY:right.y,
-        zoomOut:Number(!!buttons[6]),zoomIn:Number(!!buttons[7])},seconds);
+      onMapControl({moveX:left.x,moveY:left.y},seconds);
     }
     // Standalone mode samples A locally; in DreamCore the parent owns edges.
-    if(window.parent===window&&buttons[0]&&!padButtons[0])onModeToggle();
-    if(buttons[2]&&!padButtons[2])onInteract();
-    if(buttons[3]&&!padButtons[3])onJournal();
+    if(window.parent===window&&buttons[0]&&!padButtons[0])onInteract();
+    if(buttons[2]&&!padButtons[2])onModeToggle();
     if(buttons[1]&&!padButtons[1])onBack();
     padButtons=buttons;
   }
   listen(window,'gamepaddisconnected',resetGamepad);
   const movementKeys=new Set(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','shift']);
   listen(window,'keydown',e=>{
-    const key=keyFor(e);
-    if(!e.repeat&&!e.ctrlKey&&!e.altKey&&!e.metaKey){if(key==='e'){onInteract();e.preventDefault();}if(key==='j'){onJournal();e.preventDefault();}if(key==='escape')onBack();}
+    const key=keyFor(e);onActivity();
+    if(!e.repeat&&!e.ctrlKey&&!e.altKey&&!e.metaKey){if(key==='e'){onInteract();e.preventDefault();}if(key==='m'||key==='x'){onModeToggle();e.preventDefault();}if(key==='escape')onBack();}
     if(e.repeat&&keys.has(key))return;
-    if(isActive()&&movementKeys.has(key)&&!e.ctrlKey&&!e.altKey&&!e.metaKey){
+    if(movementKeys.has(key)&&!e.ctrlKey&&!e.altKey&&!e.metaKey){
       keys.add(key);e.preventDefault();
     }
   });

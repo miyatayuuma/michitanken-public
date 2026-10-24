@@ -12,22 +12,13 @@ function treasure(type){
  if(type==='chest'){part(new THREE.BoxGeometry(.95,.55,.68),'#b3783c',0,.28);const lid=part(new THREE.CylinderGeometry(.35,.35,.95,8,1,false,0,Math.PI),'#c58b43',0,.55);lid.rotation.z=Math.PI/2;for(const x of [-.33,.33])part(new THREE.BoxGeometry(.08,.7,.72),'#f0ce71',x,.35);part(new THREE.BoxGeometry(.17,.2,.07),'#ffea96',0,.4,.38);}
  return g;
 }
-export function createExploration({scene,container,baseURL,baseElevation,ground,low=false}){
+export function createExploration({scene,container,baseURL,baseElevation,ground,low=false,onCollect=()=>{}}){
  let storage;try{storage=window.localStorage;}catch{storage={getItem(){throw Error('storage unavailable');},setItem(){throw Error('storage unavailable');}};}
  const records=createDiscoveryStore(storage),tiles=new Map(),loaded=new Map(),live=new Map(),templates=new Map(),loader=new GLTFLoader();
- const abort=new AbortController(),{signal}=abort;let elapsed=0,time=0,closed=false,mode='walk',px=0,pz=0,nearest=null,journalOpen=false,errorCount=0;
+ const abort=new AbortController(),{signal}=abort;let elapsed=0,time=0,closed=false,mode='walk',px=0,pz=0,nearest=null,errorCount=0;
  const limit=low?6:12,interval=low?.2:.1;let sharedColormap=null;
- const pickup=document.createElement('button');pickup.id='explore-pickup';pickup.hidden=true;pickup.textContent='ひろう';pickup.title='E / コントローラー X';pickup.setAttribute('aria-label','宝物をひろう');
- const journal=document.createElement('section');journal.id='explore-journal';journal.hidden=true;journal.setAttribute('aria-label','みつけたもの');
- const open=document.createElement('button');open.id='explore-records';open.textContent='みつけたもの';open.title='J / コントローラー Y';open.setAttribute('aria-expanded','false');
- const toast=document.createElement('output');toast.id='explore-toast';toast.setAttribute('aria-live','polite');toast.hidden=true;
- container.append(pickup,journal,open,toast);let toastTimer;
- function message(text,first=false){toast.textContent=text;toast.classList.toggle('first',first);toast.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.hidden=true,2600);}
- function renderRecords(){journal.replaceChildren();const title=document.createElement('strong');title.textContent='みつけたもの';const close=document.createElement('button');close.textContent='とじる';close.onclick=()=>toggleJournal(false);journal.append(title,close);
-  for(const kind of ['animal','treasure']){const h=document.createElement('h3');h.textContent=kind==='animal'?'いきもの':'たからもの';journal.append(h);for(const [type,d] of Object.entries(OBJECTS).filter(([,d])=>d.kind===kind)){const p=document.createElement('p');p.dataset.type=type;p.textContent=records.counts[type]?d.name+(kind==='treasure'?'　'+records.counts[type]+'こ':'　みつけた！'):'？？？';journal.append(p);}}
-  const note=document.createElement('small');note.textContent=records.writable?'たからものは 1かしょにつき 1かい ひろえるよ':'きろくを ほぞんできないよ';journal.append(note);
- }
- function toggleJournal(value=!journalOpen){journalOpen=value;journal.hidden=!value;open.setAttribute('aria-expanded',String(value));if(value){toast.hidden=true;clearTimeout(toastTimer);renderRecords();journal.querySelector('button').focus();}else open.focus();}
+ const pickup=document.createElement('button');pickup.id='explore-pickup';pickup.hidden=true;pickup.textContent='ひろう';pickup.title='E / コントローラー A';pickup.setAttribute('aria-label','宝物をひろう');
+ container.append(pickup);
  const safeGround=(x,z,fallback)=>{try{const y=ground(x,z);return Number.isFinite(y)?y:fallback;}catch{return fallback;}};
  const model=type=>{if(!templates.has(type))templates.set(type,loader.loadAsync(models[type]).then(gltf=>{const retired=new Set();gltf.scene.traverse(o=>{for(const m of o.material?Array.isArray(o.material)?o.material:[o.material]:[]){if(!m.map)continue;if(!sharedColormap)sharedColormap=m.map;else if(m.map!==sharedColormap){retired.add(m.map);m.map=sharedColormap;}}});retired.forEach(t=>t.dispose());return gltf;}).catch(e=>{errorCount++;throw e;}));return templates.get(type);};
  async function register(entry){
@@ -43,9 +34,9 @@ export function createExploration({scene,container,baseURL,baseElevation,ground,
    if(closed||live.get(item.id)!==v)return;v.ready=true;group.name='exploration-'+item.type;group.position.set(item.x,item.y-baseElevation,item.z);scene.add(group);
   }catch{if(live.get(item.id)===v)stop(item.id);}
  }
- function discover(type){const first=records.discover(type);if(first){message('はじめて！ '+OBJECTS[type].name,true);if(journalOpen)renderRecords();}return first;}
- function collect(){if(journalOpen||mode!=='walk'||!nearest)return false;const p=nearest;const result=records.collect(p);if(!result)return false;stop(p.id);nearest=null;pickup.hidden=true;message((result.first?'はじめて！ ':'')+OBJECTS[p.type].name+'を ひろった！'+(!records.writable?' ほぞんできないよ':''),result.first);return true;}
- pickup.addEventListener('click',collect,{signal});open.addEventListener('click',()=>toggleJournal(),{signal});
+ function discover(type){return records.discover(type);}
+ function collect(){if(mode!=='walk'||!nearest)return false;const p=nearest;const result=records.collect(p);if(!result)return false;stop(p.id);nearest=null;pickup.hidden=true;onCollect();return true;}
+ pickup.addEventListener('click',collect,{signal});
  function update({dt,playerX,playerZ,currentMode}){
   if(closed)return;mode=currentMode;px=playerX;pz=playerZ;elapsed+=dt;time+=dt;if(elapsed<interval)return;elapsed=0;
   const desired=nearbySpawns([...loaded.values()].flat(),px,pz,{limit,radius:65,taken:records.taken}),ids=new Set(desired.map(p=>p.id));
@@ -53,10 +44,10 @@ export function createExploration({scene,container,baseURL,baseElevation,ground,
   if(mode==='walk')for(const p of desired)if(!live.has(p.id))void start(p);
   nearest=null;let closest=4.5;
   for(const v of live.values()){
-   if(!v.ready)continue;if(!journalOpen)v.mixer?.update(interval);const p=v.item,d=OBJECTS[p.type],distance=Math.hypot(p.x-px,p.z-pz),phase=(hash(p.id)%628)/100;
+   if(!v.ready)continue;v.mixer?.update(interval);const p=v.item,d=OBJECTS[p.type],distance=Math.hypot(p.x-px,p.z-pz),phase=(hash(p.id)%628)/100;
    v.group.visible=mode==='walk';if(d.kind==='animal'&&distance<d.notice)discover(p.type);
    if(d.kind==='treasure'&&distance<closest){closest=distance;nearest=p;}
-   if(!journalOpen){if(distance<5)v.reaction=1;else if(distance>10)v.reaction=Math.max(0,v.reaction-.08);}
+   {if(distance<5)v.reaction=1;else if(distance>10)v.reaction=Math.max(0,v.reaction-.08);}
    v.state=v.reaction>0?'react':'idle';
    const drift=d.kind==='animal'&&p.type==='caterpillar'?(v.reaction?.03:.18):0;
    const x=p.x+Math.cos(time*.6+phase)*drift,z=p.z+Math.sin(time*.6+phase)*drift;
@@ -64,9 +55,9 @@ export function createExploration({scene,container,baseURL,baseElevation,ground,
    v.group.position.set(x,y+(p.type==='bird'?v.reaction*(1.2+.15*Math.sin(time*8)):0),z);
    v.group.rotation.y=phase+(p.type==='caterpillar'?Math.sin(time*.5)*.3:0);
   }
-  pickup.hidden=!nearest||mode!=='walk'||journalOpen;pickup.textContent=nearest?OBJECTS[nearest.type].name+'を ひろう':'ひろう';
+  pickup.hidden=!nearest||mode!=='walk';pickup.textContent=nearest?OBJECTS[nearest.type].name+'を ひろう':'ひろう';
  }
- function snapshot(){return {loadedTiles:[...loaded.keys()].sort(),loadedCount:[...loaded.values()].reduce((n,a)=>n+a.length,0),live:[...live.values()].map(v=>({...v.item,ready:v.ready,state:v.state,position:v.group.position.toArray()})),nearest:nearest?.id||null,limit,errors:errorCount,records:records.snapshot(),journalOpen};}
- function dispose(){closed=true;abort.abort();clearTimeout(toastTimer);for(const t of tiles.values())t.controller.abort();for(const id of [...live.keys()])stop(id);for(const p of templates.values())p.then(g=>{const gs=new Set(),ms=new Set(),ts=new Set();g.scene.traverse(o=>{if(o.geometry)gs.add(o.geometry);for(const m of o.material?Array.isArray(o.material)?o.material:[o.material]:[]){ms.add(m);for(const value of Object.values(m))if(value?.isTexture)ts.add(value);}});gs.forEach(g=>g.dispose());ms.forEach(m=>m.dispose());ts.forEach(t=>t.dispose());}).catch(()=>{});for(const el of [pickup,journal,open,toast])el.remove();}
- return {register,unregister,update,collect,toggleJournal,discover,snapshot,dispose,get journalOpen(){return journalOpen;}};
+ function snapshot(){return {loadedTiles:[...loaded.keys()].sort(),loadedCount:[...loaded.values()].reduce((n,a)=>n+a.length,0),live:[...live.values()].map(v=>({...v.item,ready:v.ready,state:v.state,position:v.group.position.toArray()})),nearest:nearest?.id||null,limit,errors:errorCount,records:records.snapshot()};}
+ function dispose(){closed=true;abort.abort();for(const t of tiles.values())t.controller.abort();for(const id of [...live.keys()])stop(id);for(const p of templates.values())p.then(g=>{const gs=new Set(),ms=new Set(),ts=new Set();g.scene.traverse(o=>{if(o.geometry)gs.add(o.geometry);for(const m of o.material?Array.isArray(o.material)?o.material:[o.material]:[]){ms.add(m);for(const value of Object.values(m))if(value?.isTexture)ts.add(value);}});gs.forEach(g=>g.dispose());ms.forEach(m=>m.dispose());ts.forEach(t=>t.dispose());}).catch(()=>{});for(const el of [pickup])el.remove();}
+ return {register,unregister,update,collect,discover,snapshot,dispose};
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {MAP_ICONS} from './exploration-map.js';
 import {POI_CATEGORIES,createPoiRegistry,layoutPoiMarkers} from '../lib/poi.mjs';
 export async function loadPoiRegistry({baseURL,manifest,fetcher=fetch}){
  const response=await fetcher(baseURL.replace(/\/?$/,'/')+'data/pois.json',{cache:'no-store'});
@@ -6,7 +7,7 @@ export async function loadPoiRegistry({baseURL,manifest,fetcher=fetch}){
  if(!response.ok)throw Error('POI HTTP '+response.status);
  return createPoiRegistry(await response.json(),manifest);
 }
-const MATERIALS={park:new URL('./assets/cartography/treePines.png',import.meta.url).href,bridge:new URL('./assets/cartography/bridge.png',import.meta.url).href,water:new URL('./assets/cartography/lake.png',import.meta.url).href,civic:new URL('./assets/cartography/flag.png',import.meta.url).href};
+const MATERIALS=MAP_ICONS;
 export function createPoiMarkers({container,registry,baseElevation,mobile=false}){
  const layer=document.createElement('div');layer.className='poi-layer';layer.setAttribute('aria-hidden','true');container.append(layer);
  const pool=[],v=new THREE.Vector3();let displayed=[];
@@ -21,7 +22,7 @@ export function createPoiMarkers({container,registry,baseElevation,mobile=false}
  }
  // Reserved HUD rectangles are read only at creation/resize, never each frame.
  let size=null;
- function update({camera,mode,focus}){
+ function update({camera,mode,focus,isFound=()=>true,pulse=()=>0}){
   const width=container.clientWidth,height=container.clientHeight;
   if(!size||size.width!==width||size.height!==height||size.mode!==mode){
    const origin=container.getBoundingClientRect();
@@ -36,7 +37,7 @@ export function createPoiMarkers({container,registry,baseElevation,mobile=false}
   camera.updateMatrixWorld();
   const candidates=registry.points.flatMap(point=>{
    const distance=Math.hypot(point.position[0]-focus.x,point.position[2]-focus.z);
-   if(!point.marker.enabled||(mode==='walk'&&distance>point.marker.range))return [];
+   if(mode!=='walk'||!isFound(point.id)||!point.marker.enabled||(mode==='walk'&&distance>point.marker.range))return [];
    v.set(point.position[0],point.position[1]-baseElevation+4,point.position[2]).project(camera);
    return {point,distance,x:(v.x+1)*width/2,y:(1-v.y)*height/2,depth:v.z,
     near:distance<=65&&(mode==='walk'||camera.position.y<320)};
@@ -44,6 +45,7 @@ export function createPoiMarkers({container,registry,baseElevation,mobile=false}
   displayed=layoutPoiMarkers(candidates,{...size,mobile});
   for(let i=0;i<max;i++){
    const {node,icon,name}=pool[i],c=displayed[i];node.hidden=!c;if(!c)continue;
+   node.classList.toggle('discovering',pulse(c.point.id)>0);
    node.dataset.poiId=c.point.id;node.dataset.tileId=c.point.tileId;
    const style=POI_CATEGORIES[c.point.category];
    if(pool[i].category!==c.point.category+theme){
