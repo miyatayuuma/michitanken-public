@@ -37,3 +37,5 @@ test('game safety confirmation is independent of real access; unknown game safet
  assert.equal(canWarp(r,{has:()=>true},'fictional'),true);assert.equal(validateLanding(world(),valid).ok,true);
  for(const gameSafety of [undefined,'UNRESOLVED','REJECTED']){const l={...valid,gameSafety};assert.throws(()=>createWarpRegistry({schema:1,points:[{id:'fictional',landing:l}]},pois,manifest));assert.equal(validateLanding(world(),l).ok,false);}
 });
+
+test('explicit rejected or unresolved status cannot inherit legacy access approval',()=>{for(const gameSafety of ['REJECTED','UNRESOLVED'])assert.equal(validateLanding(world(),{...landing,gameSafety}).ok,false);});
