@@ -482,8 +482,8 @@ async function init(north,manifest){
   capture:()=>({player:{...playerState},yaw:cameraYaw,pitch:cameraPitch,distance:cameraDistance,camera:camera.position.clone(),rotation:camera.quaternion.clone(),target:controls.target.clone()}),
   commit:result=>{playerState={...playerState,x:result.x,y:result.y,z:result.z,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};cameraYaw=result.yaw;playerSprite?.reset();footCache=null;avatarPosition();changeModeAfterWarp();followCamera(0,true);updateHud();},
   restore:s=>{playerState=s.player;cameraYaw=s.yaw;cameraPitch=s.pitch;cameraDistance=s.distance;camera.position.copy(s.camera);camera.quaternion.copy(s.rotation);controls.target.copy(s.target);avatarPosition();updateHud();},
-  transition:async signal=>{if(!matchMedia('(prefers-reduced-motion: reduce)').matches)await new Promise(resolve=>setTimeout(resolve,140));if(signal.aborted)throw Error('cancelled');},
-  onBusy:value=>{gameInput.reset();accumulator=0;map2d?.setBusy(value);characterButton.disabled=value;container.classList.toggle('warp-transition',value);}
+  transition:async signal=>{container.classList.add('warp-transition');if(!matchMedia('(prefers-reduced-motion: reduce)').matches)await new Promise(resolve=>setTimeout(resolve,140));if(signal.aborted)throw Error('cancelled');},
+  onBusy:value=>{gameInput.reset();accumulator=0;map2d?.setBusy(value);characterButton.disabled=value;if(!value)container.classList.remove('warp-transition');}
  });
  function changeModeAfterWarp(){mode='walk';document.querySelector('#app').dataset.mode=mode;modeButton.textContent='マップ';modeButton.setAttribute('aria-label','全体マップを開く');modeButton.setAttribute('aria-expanded','false');container.dataset.overviewReady='false';map2d?.setOpen(false);gameInput.reset();}
  modeButton.onclick=()=>changeMode(mode==='walk'?'map':'walk');
