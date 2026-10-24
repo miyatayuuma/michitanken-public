@@ -19,6 +19,7 @@ import {createWideOverview,wideOverviewNeeded} from './wide-overview.js';
 import {pixelRatioBudget,tileDetail,geometryStats,OVERVIEW_ROAD_STEP,FULL_ROAD_STEP} from '../lib/render-policy.mjs';
 import {createVegetationRenderer,natureInstanceBudget} from './vegetation.js';
 import {createWildlifeRenderer} from './wildlife.js';
+import {createExploration} from './exploration.js';
 import {loadPlayerSprite} from './player-sprite.js';
 import {renderedFootHeight} from '../lib/avatar-ground.mjs';
 import './style.css';
@@ -143,8 +144,9 @@ async function init(north,manifest){
  const natureEnabled=new URLSearchParams(location.search).get('nature')!=='off';
  const wildlifeEnabled=natureEnabled&&new URLSearchParams(location.search).get('wildlife')!=='off';
  const natureRenderer=createVegetationRenderer({baseURL:import.meta.env.BASE_URL});
+ const exploration=new URLSearchParams(location.search).get('exploration')==='off'?null:createExploration({scene,container,baseURL:import.meta.env.BASE_URL,baseElevation:north.terrain.min,ground:(x,z)=>terrainHeight(world,x,z),low:memoryGiB!==null&&memoryGiB<=2});
  const wildlife=wildlifeEnabled?createWildlifeRenderer({
-   scene,baseURL:import.meta.env.BASE_URL,baseElevation:north.terrain.min
+   scene,baseURL:import.meta.env.BASE_URL,baseElevation:north.terrain.min,onDiscover:type=>exploration?.discover(type)
  }):null;
  async function vegetationOverlay(entry){
    if(!natureEnabled)return null;
@@ -321,6 +323,7 @@ async function init(north,manifest){
    layers.roads.visible=layerVisibility.roads;
    layers.buildings.visible=layerVisibility.buildings;
    registerTile(world,entry,field);
+   void exploration?.register(entry);
    root.position.set(entry.offset[0],field.terrain.min-world.baseElevation,entry.offset[1]);
    scene.add(root);
    const maxHeight=Math.max(40,...field.osm.buildings.map(b=>b.height));
@@ -341,7 +344,7 @@ async function init(north,manifest){
  }
  function unmount(entry,visual){
    visual.removed=true;
-   wildlife?.unregister(entry.id);
+   wildlife?.unregister(entry.id);exploration?.unregister(entry.id);
    visuals.delete(entry.id);
    removeTile(world,entry.id);
    scene.remove(visual.root);disposeObject(visual.root);
@@ -380,10 +383,11 @@ async function init(north,manifest){
  const gameInput=createGameInput({
    canvas:renderer.domElement,joystick:document.querySelector('#joystick'),
    knob:document.querySelector('#joystick-knob'),runButton:document.querySelector('#run'),
-   isActive:()=>mode==='walk',
+   isActive:()=>mode==='walk'&&!exploration?.journalOpen,
    onLook(dx,dy){cameraYaw+=dx;cameraPitch=Math.min(1.1,Math.max(.2,cameraPitch+dy));},
    onZoom(ratio){cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));},
-   onModeToggle(){changeMode(mode==='walk'?'map':'walk');},
+   onModeToggle(){if(!exploration?.journalOpen)changeMode(mode==='walk'?'map':'walk');},
+   onInteract(){exploration?.collect();},onJournal(){exploration?.toggleJournal();},onBack(){if(exploration?.journalOpen)exploration.toggleJournal(false);},
    onMapControl(input,dt){
      if(mode!=='map'||!dt||!Object.values(input).some(Boolean))return;
      const next=mapGamepadStep({
@@ -625,6 +629,7 @@ async function init(north,manifest){
        wildlifeCandidates:wildlife?.candidateCount||0,
        levels:[...visuals.values()].map(v=>({id:v.entry.id,level:v.level,visible:v.root.visible}))
      }),
+     exploration:()=>exploration?.snapshot(),
      wildlifeSpots:()=>wildlife?.candidatePositions||[],
      worldCollision:(x,z)=>collisionReason(world,x,z),
      overviewProjection:()=>{
@@ -707,6 +712,7 @@ async function init(north,manifest){
    // LOD geometry rebuilds remain throttled above.
    updateVisibleTiles();
    playerSprite?.update({state:playerState,camera,walking:mode==='walk'});
+   exploration?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
    wildlife?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
    poiMarkers?.update({camera,mode,focus:mode==='walk'?playerState:controls.target});
    renderer.render(scene,camera);
@@ -736,7 +742,7 @@ async function init(north,manifest){
    cancelAnimationFrame(frame);observer.disconnect();gameInput.destroy();controls.dispose();
    overviewAbort?.abort();longTaskObserver?.disconnect();
    wideLayer?.dispose();
-   wildlife?.dispose();poiMarkers?.dispose();biomeDebug?.dispose();
+   exploration?.dispose();wildlife?.dispose();poiMarkers?.dispose();biomeDebug?.dispose();
    void streamer.dispose();
    natureRenderer.dispose();
    if(playerSprite)playerSprite.dispose();
