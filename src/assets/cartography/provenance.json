@@ -1,0 +1,36 @@
+{
+  "pack": "Cartography Pack",
+  "author": "Kenney",
+  "source": "https://kenney.nl/assets/cartography-pack",
+  "archiveURL": "https://kenney.nl/media/pages/assets/cartography-pack/2055ba99c2-1677578192/kenney_cartography-pack.zip",
+  "archiveSHA256": "5e0c41c70a4bf54fb7607520efda9a1d03a92082e258ec83c6f95c6730b27d85",
+  "licence": "CC0-1.0",
+  "retrievedDate": "2026-10-24",
+  "timezone": "Asia/Tokyo",
+  "files": [
+    {
+      "original": "PNG/Retina/treePines.png",
+      "adopted": "treePines.png",
+      "sha256": "597cb6700bf2dae92147724ee7189a0eeffb197fd8515b57c2e6eb02eef44e87",
+      "processing": "Unmodified PNG; CSS contains at 24px on parchment disc"
+    },
+    {
+      "original": "PNG/Retina/bridge.png",
+      "adopted": "bridge.png",
+      "sha256": "97a31aadf65de6719fc13bf6cfa86e3ffe65e9ecb669d7e4ccf4148f45937132",
+      "processing": "Unmodified PNG; CSS contains at 24px on parchment disc"
+    },
+    {
+      "original": "PNG/Retina/lake.png",
+      "adopted": "lake.png",
+      "sha256": "6425e58005f23549983c9c09bce1746bd221e1f7323e16c4f87fe53175d95048",
+      "processing": "Unmodified PNG; CSS contains at 24px on parchment disc"
+    },
+    {
+      "original": "PNG/Retina/flag.png",
+      "adopted": "flag.png",
+      "sha256": "6b271a976a9015161d62f2cbe109bb70d209dfa039e8d4e874c2faa19988b826",
+      "processing": "Unmodified PNG; CSS contains at 24px on parchment disc"
+    }
+  ]
+}

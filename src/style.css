@@ -50,3 +50,10 @@ footer{background:#142c2c;display:flex;justify-content:space-between;gap:10px;pa
 .poi-marker[data-shape="pentagon"] .poi-icon{clip-path:polygon(50% 0,100% 30%,90% 100%,10% 100%,0 30%);border-radius:0}
 .poi-marker[data-shape="drop"] .poi-icon{border-radius:50% 50% 50% 8px}
 .poi-name{background:#173130e8;border-radius:5px;padding:3px 5px;font-size:12px;line-height:18px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+
+/* Existing Kenney ink artwork on a quiet parchment disc; no pulsing animation. */
+.poi-layer[data-theme="cartography"] .poi-marker[data-material="cartography"] .poi-icon{background:#fff4d6;border:1.5px solid #564b38;border-radius:50%;clip-path:none;box-shadow:0 1px 2px #fff8}
+.poi-icon img{display:block;width:24px;height:24px;object-fit:contain}
+.poi-layer[data-theme="cartography"] .poi-name{background:#fff4d6f5;color:#3b3327;border:1px solid #71654f;font-weight:600}
+
+.biome-debug{position:absolute;right:8px;top:75px;z-index:8;background:#fffdf1ed;color:#283b30;padding:8px;max-width:320px;font-size:11px;pointer-events:auto}.biome-debug pre{white-space:pre-wrap;max-height:200px;overflow:auto}.biome-debug select{font:inherit}

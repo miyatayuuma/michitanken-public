@@ -1,0 +1,562 @@
+{
+  "status": "PASS",
+  "renderer": "Chromium SwiftShader; physical device UNVERIFIED",
+  "rows": [
+    {
+      "mobile": false,
+      "metrics": [
+        {
+          "mode": "walk",
+          "theme": "legacy",
+          "stats": {
+            "roadTriangles": 3438,
+            "buildingTriangles": 56,
+            "waterTriangles": 1664,
+            "full": 1,
+            "overview": 2,
+            "totalTriangles": 5158,
+            "pixelRatio": 1,
+            "memory": {
+              "geometries": 9,
+              "textures": 0
+            },
+            "geometryBytes": 534736,
+            "heapBytes": 16100000,
+            "markers": 1,
+            "render": {
+              "frame": 108,
+              "calls": 8,
+              "triangles": 4038,
+              "points": 0,
+              "lines": 0
+            },
+            "frameP95Ms": 68,
+            "longTaskCount": 3,
+            "visibleTiles": 1,
+            "wideOverview": null,
+            "natureInstances": 0,
+            "wildlifeVisible": 0,
+            "wildlifeCandidates": 6,
+            "levels": [
+              {
+                "id": "north",
+                "level": "full",
+                "visible": true
+              },
+              {
+                "id": "t-1-2",
+                "level": "overview",
+                "visible": false
+              },
+              {
+                "id": "t-2-1",
+                "level": "overview",
+                "visible": false
+              }
+            ]
+          },
+          "visible": [
+            {
+              "id": "fictional:park",
+              "tileId": "north",
+              "position": [
+                -60,
+                20,
+                -50
+              ],
+              "label": true,
+              "box": {
+                "left": 581.0000000000002,
+                "right": 699.0000000000002,
+                "top": 79.48972961676785,
+                "bottom": 109.48972961676785
+              }
+            }
+          ]
+        },
+        {
+          "mode": "walk",
+          "theme": "cartography",
+          "stats": {
+            "roadTriangles": 3438,
+            "buildingTriangles": 56,
+            "waterTriangles": 1664,
+            "full": 1,
+            "overview": 2,
+            "totalTriangles": 5158,
+            "pixelRatio": 1,
+            "memory": {
+              "geometries": 9,
+              "textures": 0
+            },
+            "geometryBytes": 534736,
+            "heapBytes": 16100000,
+            "markers": 1,
+            "render": {
+              "frame": 153,
+              "calls": 8,
+              "triangles": 4038,
+              "points": 0,
+              "lines": 0
+            },
+            "frameP95Ms": 44,
+            "longTaskCount": 3,
+            "visibleTiles": 1,
+            "wideOverview": null,
+            "natureInstances": 0,
+            "wildlifeVisible": 0,
+            "wildlifeCandidates": 6,
+            "levels": [
+              {
+                "id": "north",
+                "level": "full",
+                "visible": true
+              },
+              {
+                "id": "t-1-2",
+                "level": "overview",
+                "visible": false
+              },
+              {
+                "id": "t-2-1",
+                "level": "overview",
+                "visible": false
+              }
+            ]
+          },
+          "visible": [
+            {
+              "id": "fictional:park",
+              "tileId": "north",
+              "position": [
+                -60,
+                20,
+                -50
+              ],
+              "label": true,
+              "box": {
+                "left": 581.0000000000002,
+                "right": 699.0000000000002,
+                "top": 79.48972961676785,
+                "bottom": 109.48972961676785
+              }
+            }
+          ]
+        },
+        {
+          "mode": "map",
+          "theme": "legacy",
+          "stats": {
+            "roadTriangles": 768,
+            "buildingTriangles": 24,
+            "waterTriangles": 192,
+            "full": 0,
+            "overview": 3,
+            "totalTriangles": 984,
+            "pixelRatio": 1,
+            "memory": {
+              "geometries": 20,
+              "textures": 3
+            },
+            "geometryBytes": 323136,
+            "heapBytes": 16100000,
+            "markers": 1,
+            "render": {
+              "frame": 230,
+              "calls": 26,
+              "triangles": 53480,
+              "points": 0,
+              "lines": 384
+            },
+            "frameP95Ms": 77,
+            "longTaskCount": 4,
+            "visibleTiles": 3,
+            "wideOverview": {
+              "tiles": 25,
+              "cells": 12,
+              "triangles": 7200,
+              "textures": 3,
+              "texturePixels": 1536
+            },
+            "natureInstances": 0,
+            "wildlifeVisible": 0,
+            "wildlifeCandidates": 6,
+            "levels": [
+              {
+                "id": "north",
+                "level": "overview",
+                "visible": true
+              },
+              {
+                "id": "t-1-2",
+                "level": "overview",
+                "visible": true
+              },
+              {
+                "id": "t-2-1",
+                "level": "overview",
+                "visible": true
+              }
+            ]
+          },
+          "visible": [
+            {
+              "id": "fictional:bridge",
+              "tileId": "north",
+              "position": [
+                0,
+                20,
+                45
+              ],
+              "label": false,
+              "box": {
+                "left": 625,
+                "right": 655,
+                "top": 346.3456436574463,
+                "bottom": 376.3456436574463
+              }
+            }
+          ]
+        },
+        {
+          "mode": "map",
+          "theme": "cartography",
+          "stats": {
+            "roadTriangles": 768,
+            "buildingTriangles": 24,
+            "waterTriangles": 192,
+            "full": 0,
+            "overview": 3,
+            "totalTriangles": 984,
+            "pixelRatio": 1,
+            "memory": {
+              "geometries": 20,
+              "textures": 3
+            },
+            "geometryBytes": 323136,
+            "heapBytes": 16100000,
+            "markers": 1,
+            "render": {
+              "frame": 279,
+              "calls": 26,
+              "triangles": 53480,
+              "points": 0,
+              "lines": 384
+            },
+            "frameP95Ms": 116,
+            "longTaskCount": 4,
+            "visibleTiles": 3,
+            "wideOverview": {
+              "tiles": 25,
+              "cells": 12,
+              "triangles": 7200,
+              "textures": 3,
+              "texturePixels": 1536
+            },
+            "natureInstances": 0,
+            "wildlifeVisible": 0,
+            "wildlifeCandidates": 6,
+            "levels": [
+              {
+                "id": "north",
+                "level": "overview",
+                "visible": true
+              },
+              {
+                "id": "t-1-2",
+                "level": "overview",
+                "visible": true
+              },
+              {
+                "id": "t-2-1",
+                "level": "overview",
+                "visible": true
+              }
+            ]
+          },
+          "visible": [
+            {
+              "id": "fictional:bridge",
+              "tileId": "north",
+              "position": [
+                0,
+                20,
+                45
+              ],
+              "label": false,
+              "box": {
+                "left": 625,
+                "right": 655,
+                "top": 346.3456436574463,
+                "bottom": 376.3456436574463
+              }
+            }
+          ]
+        }
+      ],
+      "normalAuditRequests": 0,
+      "errors": []
+    },
+    {
+      "mobile": true,
+      "metrics": [
+        {
+          "mode": "walk",
+          "theme": "legacy",
+          "stats": {
+            "roadTriangles": 3438,
+            "buildingTriangles": 56,
+            "waterTriangles": 1664,
+            "full": 1,
+            "overview": 2,
+            "totalTriangles": 5158,
+            "pixelRatio": 1,
+            "memory": {
+              "geometries": 9,
+              "textures": 0
+            },
+            "geometryBytes": 534736,
+            "heapBytes": 15200000,
+            "markers": 0,
+            "render": {
+              "frame": 88,
+              "calls": 8,
+              "triangles": 4038,
+              "points": 0,
+              "lines": 0
+            },
+            "frameP95Ms": 36,
+            "longTaskCount": 0,
+            "visibleTiles": 1,
+            "wideOverview": null,
+            "natureInstances": 0,
+            "wildlifeVisible": 0,
+            "wildlifeCandidates": 6,
+            "levels": [
+              {
+                "id": "north",
+                "level": "full",
+                "visible": true
+              },
+              {
+                "id": "t-1-2",
+                "level": "overview",
+                "visible": false
+              },
+              {
+                "id": "t-2-1",
+                "level": "overview",
+                "visible": false
+              }
+            ]
+          },
+          "visible": []
+        },
+        {
+          "mode": "walk",
+          "theme": "cartography",
+          "stats": {
+            "roadTriangles": 3438,
+            "buildingTriangles": 56,
+            "waterTriangles": 1664,
+            "full": 1,
+            "overview": 2,
+            "totalTriangles": 5158,
+            "pixelRatio": 1,
+            "memory": {
+              "geometries": 9,
+              "textures": 0
+            },
+            "geometryBytes": 534736,
+            "heapBytes": 15200000,
+            "markers": 0,
+            "render": {
+              "frame": 120,
+              "calls": 8,
+              "triangles": 4038,
+              "points": 0,
+              "lines": 0
+            },
+            "frameP95Ms": 33,
+            "longTaskCount": 0,
+            "visibleTiles": 1,
+            "wideOverview": null,
+            "natureInstances": 0,
+            "wildlifeVisible": 0,
+            "wildlifeCandidates": 6,
+            "levels": [
+              {
+                "id": "north",
+                "level": "full",
+                "visible": true
+              },
+              {
+                "id": "t-1-2",
+                "level": "overview",
+                "visible": false
+              },
+              {
+                "id": "t-2-1",
+                "level": "overview",
+                "visible": false
+              }
+            ]
+          },
+          "visible": []
+        },
+        {
+          "mode": "map",
+          "theme": "legacy",
+          "stats": {
+            "roadTriangles": 768,
+            "buildingTriangles": 24,
+            "waterTriangles": 192,
+            "full": 0,
+            "overview": 3,
+            "totalTriangles": 984,
+            "pixelRatio": 1,
+            "memory": {
+              "geometries": 20,
+              "textures": 3
+            },
+            "geometryBytes": 323136,
+            "heapBytes": 15200000,
+            "markers": 1,
+            "render": {
+              "frame": 188,
+              "calls": 26,
+              "triangles": 53480,
+              "points": 0,
+              "lines": 384
+            },
+            "frameP95Ms": 47,
+            "longTaskCount": 0,
+            "visibleTiles": 3,
+            "wideOverview": {
+              "tiles": 25,
+              "cells": 12,
+              "triangles": 7200,
+              "textures": 3,
+              "texturePixels": 1536
+            },
+            "natureInstances": 0,
+            "wildlifeVisible": 0,
+            "wildlifeCandidates": 6,
+            "levels": [
+              {
+                "id": "north",
+                "level": "overview",
+                "visible": true
+              },
+              {
+                "id": "t-1-2",
+                "level": "overview",
+                "visible": true
+              },
+              {
+                "id": "t-2-1",
+                "level": "overview",
+                "visible": true
+              }
+            ]
+          },
+          "visible": [
+            {
+              "id": "fictional:bridge",
+              "tileId": "north",
+              "position": [
+                0,
+                20,
+                45
+              ],
+              "label": false,
+              "box": {
+                "left": 180,
+                "right": 210,
+                "top": 358.4832165559398,
+                "bottom": 388.4832165559398
+              }
+            }
+          ]
+        },
+        {
+          "mode": "map",
+          "theme": "cartography",
+          "stats": {
+            "roadTriangles": 768,
+            "buildingTriangles": 24,
+            "waterTriangles": 192,
+            "full": 0,
+            "overview": 3,
+            "totalTriangles": 984,
+            "pixelRatio": 1,
+            "memory": {
+              "geometries": 20,
+              "textures": 3
+            },
+            "geometryBytes": 323136,
+            "heapBytes": 15200000,
+            "markers": 1,
+            "render": {
+              "frame": 239,
+              "calls": 26,
+              "triangles": 53480,
+              "points": 0,
+              "lines": 384
+            },
+            "frameP95Ms": 73,
+            "longTaskCount": 0,
+            "visibleTiles": 3,
+            "wideOverview": {
+              "tiles": 25,
+              "cells": 12,
+              "triangles": 7200,
+              "textures": 3,
+              "texturePixels": 1536
+            },
+            "natureInstances": 0,
+            "wildlifeVisible": 0,
+            "wildlifeCandidates": 6,
+            "levels": [
+              {
+                "id": "north",
+                "level": "overview",
+                "visible": true
+              },
+              {
+                "id": "t-1-2",
+                "level": "overview",
+                "visible": true
+              },
+              {
+                "id": "t-2-1",
+                "level": "overview",
+                "visible": true
+              }
+            ]
+          },
+          "visible": [
+            {
+              "id": "fictional:bridge",
+              "tileId": "north",
+              "position": [
+                0,
+                20,
+                45
+              ],
+              "label": false,
+              "box": {
+                "left": 180,
+                "right": 210,
+                "top": 358.4832165559398,
+                "bottom": 388.4832165559398
+              }
+            }
+          ]
+        }
+      ],
+      "normalAuditRequests": 0,
+      "errors": []
+    }
+  ]
+}
