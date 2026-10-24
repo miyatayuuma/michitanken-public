@@ -1,3 +1,4 @@
+import {loadPoiRegistry,createPoiMarkers} from './poi-markers.js';
 import {addBuildings} from './buildings.js';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
@@ -125,6 +126,13 @@ async function init(north,manifest){
  scene.add(new THREE.HemisphereLight(0xf5faff,0x83917b,2.1));
  const sun=new THREE.DirectionalLight(0xffffff,2);sun.position.set(-180,320,120);scene.add(sun);
  const world=createTiledWorld(manifest);
+ let poiRegistry=null,poiMarkers=null;
+ if(new URLSearchParams(location.search).get('markers')!=='off'){
+  try{
+   poiRegistry=await loadPoiRegistry({baseURL:import.meta.env.BASE_URL,manifest});
+   poiMarkers=createPoiMarkers({container,registry:poiRegistry,baseElevation:north.terrain.min,mobile:coarsePointer});
+  }catch(error){console.warn('Optional public markers unavailable:',error);container.dataset.poiError='true';}
+ }
  const visuals=new Map(),layerVisibility={roads:true,buildings:true};
  const colorsEnabled=new URLSearchParams(location.search).get('colors')!=='off';
  const natureColorsEnabled=new URLSearchParams(location.search).get('natureColors')!=='off';
@@ -593,10 +601,14 @@ async function init(north,manifest){
      },
      state:()=>({...playerState,tiles:streamer.snapshot()}),
      avatar:()=>playerSprite?.snapshot()||{kind:'model'},
+     poi:()=>({total:poiRegistry?.points.length||0,visible:poiMarkers?.snapshot()||[]}),
      renderStats:()=>({
        ...geometryStats(visuals.values()),
        pixelRatio:renderer.getPixelRatio(),
        memory:{...renderer.info.memory},
+       geometryBytes:(()=>{const buffers=new Set();scene.traverse(o=>{if(o.geometry){for(const a of Object.values(o.geometry.attributes))buffers.add(a.array.buffer);if(o.geometry.index)buffers.add(o.geometry.index.array.buffer);}if(o.instanceColor)buffers.add(o.instanceColor.array.buffer);if(o.instanceMatrix)buffers.add(o.instanceMatrix.array.buffer);});return [...buffers].reduce((n,b)=>n+b.byteLength,0);})(),
+       heapBytes:performance.memory?.usedJSHeapSize??null,
+       markers:poiMarkers?.snapshot().length||0,
        render:{...renderer.info.render},
        frameP95Ms:Number(container.dataset.frameP95Ms||0),
        longTaskCount:longTaskState.count,
@@ -690,6 +702,7 @@ async function init(north,manifest){
    updateVisibleTiles();
    playerSprite?.update({state:playerState,camera,walking:mode==='walk'});
    wildlife?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
+   poiMarkers?.update({camera,mode,focus:mode==='walk'?playerState:controls.target});
    renderer.render(scene,camera);
    frameIndex++;
    frameDurations.push(rawDt*1000);
@@ -717,7 +730,7 @@ async function init(north,manifest){
    cancelAnimationFrame(frame);observer.disconnect();gameInput.destroy();controls.dispose();
    overviewAbort?.abort();longTaskObserver?.disconnect();
    wideLayer?.dispose();
-   wildlife?.dispose();
+   wildlife?.dispose();poiMarkers?.dispose();
    void streamer.dispose();
    natureRenderer.dispose();
    if(playerSprite)playerSprite.dispose();

@@ -41,3 +41,12 @@ footer{background:#142c2c;display:flex;justify-content:space-between;gap:10px;pa
  footer{padding:6px 9px;font-size:9px}
 }
 @media(max-height:530px){#joystick{width:100px;height:100px}#run{width:63px;height:63px}}
+.poi-layer{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1;contain:layout style}
+.poi-marker{position:absolute;display:flex;align-items:center;justify-content:center;gap:4px;height:30px;color:#fff;pointer-events:none;filter:drop-shadow(0 1px 2px #19352c80)}
+.poi-marker[hidden],.poi-name[hidden]{display:none}
+.poi-icon{width:30px;height:30px;flex-shrink:0;display:grid;place-items:center;background:var(--poi-color);border:2px solid #fff;border-radius:50%}
+.poi-icon svg{width:22px;height:22px}
+.poi-marker[data-shape="square"] .poi-icon{border-radius:6px}
+.poi-marker[data-shape="pentagon"] .poi-icon{clip-path:polygon(50% 0,100% 30%,90% 100%,10% 100%,0 30%);border-radius:0}
+.poi-marker[data-shape="drop"] .poi-icon{border-radius:50% 50% 50% 8px}
+.poi-name{background:#173130e8;border-radius:5px;padding:3px 5px;font-size:12px;line-height:18px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
