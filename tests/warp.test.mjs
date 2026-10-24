@@ -30,3 +30,12 @@ test('load error, invalid landing, cancellation, timeout and revoked discovery p
  let allowed=true;const revoked=controller({allowed:()=>allowed,load:async()=>{allowed=false;}});assert.equal((await revoked.c.warp('a')).ok,false);assert.equal(revoked.commits,0);
 });
 test('transition failure and commit exception restore snapshot and input',async()=>{const v=controller({commit:()=>{throw Error('commit');}});assert.equal((await v.c.warp('a')).ok,false);assert.deepEqual(v.state,{x:12,camera:9});assert.equal(v.c.busy,false);});
+
+test('game safety confirmation is independent of real access; unknown game safety fails closed',()=>{
+ const pois={get:()=>true}, valid={...landing,publicAccessVerified:undefined,gameSafety:'GAME_SAFE_CONFIRMED'};
+ const r=createWarpRegistry({schema:1,points:[{id:'fictional',landing:valid}]},pois,manifest);
+ assert.equal(canWarp(r,{has:()=>true},'fictional'),true);assert.equal(validateLanding(world(),valid).ok,true);
+ for(const gameSafety of [undefined,'UNRESOLVED','REJECTED']){const l={...valid,gameSafety};assert.throws(()=>createWarpRegistry({schema:1,points:[{id:'fictional',landing:l}]},pois,manifest));assert.equal(validateLanding(world(),l).ok,false);}
+});
+
+test('explicit rejected or unresolved status cannot inherit legacy access approval',()=>{for(const gameSafety of ['REJECTED','UNRESOLVED'])assert.equal(validateLanding(world(),{...landing,gameSafety}).ok,false);});
