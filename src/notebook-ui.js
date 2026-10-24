@@ -6,7 +6,8 @@ export function setupNotebook(){
  for(const [id,n] of [['mode','map'],['run','run'],['menu-open','menu']])document.querySelector('#'+id).innerHTML=icon(n);
  const menu=document.querySelector('#notebook-menu'),button=document.querySelector('#menu-open');
  let opened=false,change=()=>{};
- function setOpen(value){opened=value;change();menu.hidden=!value;button.setAttribute('aria-expanded',String(value));if(value)menu.querySelector('button')?.focus();else button.focus();}
+ function setOpen(value){opened=value;for(const el of document.querySelectorAll('#mode,#characters'))el.inert=value;change();menu.hidden=!value;button.setAttribute('aria-expanded',String(value));if(value)menu.querySelector('button')?.focus();else button.focus();}
+ menu.setAttribute('role','dialog');menu.setAttribute('aria-modal','true');menu.addEventListener('keydown',e=>{if(e.key!=='Tab')return;const items=[...menu.querySelectorAll('button,input,a')],i=items.indexOf(document.activeElement);e.preventDefault();items[(i+(e.shiftKey?-1:1)+items.length)%items.length]?.focus();});
  button.onclick=()=>setOpen(!opened);menu.querySelector('button').onclick=()=>setOpen(false);
  const settings=document.querySelector('#standalone-audio');
  if(window.parent!==window){settings.remove();}else{
