@@ -6,7 +6,7 @@ const m=await read('public/data/tiles.json'),w=createTiledWorld(m);for(const t o
 const pois=await read('public/data/pois.json');const warps=[];
 for(const [id,min,max] of [['fictional-warp',400,600],['fictional-seam',249,251]]){
  let found;
- for(let x=min;x<=max&&!found;x+=2)for(let z=-100;z<=100&&!found;z+=5){const tile=tileAtPosition(m,x,z),f=w.tileWorlds.get(tile.id).field,y=renderedFootHeight(f,x-tile.offset[0],z-tile.offset[1],w.baseElevation,{roadStep:2.4})+w.baseElevation;const l={confirmed:true,publicAccessVerified:true,position:[x,y,z],yaw:1,clearance:1.5};if(validateLanding(w,l).ok)found={tile,l};}
+ for(let x=min;x<=max&&!found;x+=2)for(let z=-100;z<=100&&!found;z+=5){const tile=tileAtPosition(m,x,z),f=w.tileWorlds.get(tile.id).field,y=renderedFootHeight(f,x-tile.offset[0],z-tile.offset[1],w.baseElevation,{roadStep:2.4})+w.baseElevation;const l={confirmed:true,gameSafety:'GAME_SAFE_CONFIRMED',position:[x,y,z],yaw:1,clearance:1.5};if(validateLanding(w,l).ok)found={tile,l};}
  if(!found)throw Error('No safe synthetic landing');
  const {tile,l}=found;pois.points.push({...pois.points[0],id,name:'架空のワープ',tileId:tile.id,position:[l.position[0],20,l.position[2]]});warps.push({id,landing:l});
 }
