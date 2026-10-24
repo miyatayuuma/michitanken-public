@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {MAP_ICONS} from './exploration-map.js';
+import {icon as notebookIcon} from './notebook-ui.js';
 import {POI_CATEGORIES,createPoiRegistry,layoutPoiMarkers} from '../lib/poi.mjs';
 export async function loadPoiRegistry({baseURL,manifest,fetcher=fetch}){
  const response=await fetcher(baseURL.replace(/\/?$/,'/')+'data/pois.json',{cache:'no-store'});
@@ -7,7 +7,7 @@ export async function loadPoiRegistry({baseURL,manifest,fetcher=fetch}){
  if(!response.ok)throw Error('POI HTTP '+response.status);
  return createPoiRegistry(await response.json(),manifest);
 }
-const MATERIALS=MAP_ICONS;
+const MATERIALS={};
 export function createPoiMarkers({container,registry,baseElevation,mobile=false}){
  const layer=document.createElement('div');layer.className='poi-layer';layer.setAttribute('aria-hidden','true');container.append(layer);
  const pool=[],v=new THREE.Vector3();let displayed=[];
@@ -50,9 +50,7 @@ export function createPoiMarkers({container,registry,baseElevation,mobile=false}
    const style=POI_CATEGORIES[c.point.category];
    if(pool[i].category!==c.point.category+theme){
     // Only built-in constant SVG paths enter markup; all data labels use textContent.
-    const asset=theme==='cartography'&&MATERIALS[c.point.category];
-    if(asset){icon.replaceChildren();const img=document.createElement('img');img.src=asset;img.alt='';img.draggable=false;icon.append(img);}else icon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="'+style.icon+'"/></svg>';
-    pool[i].category=c.point.category+theme;node.dataset.role='landmark';node.dataset.material=asset?'cartography':'legacy';node.dataset.shape=style.shape;node.style.setProperty('--poi-color',style.color);
+    icon.innerHTML=notebookIcon(c.point.category);pool[i].category=c.point.category+theme;node.dataset.role='landmark';node.dataset.material='notebook';
    }
    node.style.transform=`translate(${c.box.left}px,${c.box.top}px)`;node.style.width=(c.box.right-c.box.left)+'px';
    name.textContent=c.point.name;name.hidden=!c.label;

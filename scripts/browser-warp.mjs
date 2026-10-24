@@ -4,7 +4,7 @@ const server=await createServer({root,server:{host:'127.0.0.1',port:8087,strictP
 try{for(const mobile of [false,true]){const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1280,height:800},isMobile:mobile,hasTouch:mobile});const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('http://127.0.0.1:8087/?test=1');await page.waitForFunction(()=>document.querySelector('#scene')?.dataset.appReady==='true');
  const state=()=>page.evaluate(()=>window.__michiDebug.state());const avatar=()=>page.evaluate(()=>window.__michiDebug.avatar());const start=await state();const character=(await avatar()).character;
  await page.keyboard.press('c');assert.notEqual((await avatar()).character,character);const after=await state();assert.equal(start.x,after.x);assert.equal(start.z,after.z);
- await page.locator('#character-switch').click();assert.equal((await avatar()).character,character);
+ await page.locator('#character-'+character).click();assert.equal((await avatar()).character,character);
  const target=warps.points.find(p=>p.landing.confirmed);assert.ok(target);const [x,,z]=target.landing.position;
  await page.keyboard.press('m');assert.equal((await page.evaluate(id=>window.__michiDebug.warp(id),target.id)).ok,false);await page.keyboard.press('Escape');
  await page.evaluate(async ({x,z,m})=>{const ids=m.tiles.filter(t=>Math.abs(t.offset[0]-x)<=270&&Math.abs(t.offset[1]-z)<=270).map(t=>t.id);await Promise.all(ids.map(id=>window.__michiDebug.ensureTile(id)));if(!window.__michiDebug.teleport(x,z))throw Error('fixture setup');},{x,z,m});
@@ -13,8 +13,7 @@ try{for(const mobile of [false,true]){const context=await browser.newContext({vi
  await page.keyboard.press('m');const frozen=await state();await page.keyboard.press('c');assert.equal((await avatar()).character,character);
  await page.keyboard.down('w');await page.waitForTimeout(200);await page.keyboard.up('w');assert.equal((await state()).x,frozen.x);assert.equal((await state()).z,frozen.z);
  // Move the pointer to the exact fictional marker; selection alone cannot move.
- const box=await page.locator('#exploration-map canvas').boundingBox();const side=Math.min(box.width-28,box.height-124),left=(box.width-side)/2,top=Math.max(10,(box.height-110-side)/2);const minX=Math.min(...m.tiles.map(t=>t.offset[0]-250)),minZ=Math.min(...m.tiles.map(t=>t.offset[1]-250));const span=2500;
- const click={x:box.x+left+(x-minX)/span*side,y:box.y+top+(z-minZ)/span*side};
+ const box=await page.locator('#exploration-map canvas').boundingBox();const targetPoint=await page.evaluate(id=>window.__michiDebug.map().points.find(p=>p.id===id),target.id);const click={x:box.x+targetPoint.x,y:box.y+targetPoint.y};
  if(mobile)await page.touchscreen.tap(click.x,click.y);else await page.mouse.click(click.x,click.y);
  assert.equal((await state()).x,frozen.x);assert.equal(await page.locator('#map-warp').isVisible(),true);await page.keyboard.press('Escape');assert.equal(await page.locator('#map-warp').isVisible(),false);assert.equal(await page.evaluate(()=>window.__michiDebug.map().open),true);
  if(mobile)await page.touchscreen.tap(click.x,click.y);else await page.mouse.click(click.x,click.y);await page.locator('#map-warp').click();await page.waitForFunction(x=>Math.abs(window.__michiDebug.state().x-x)<.01,x);assert.equal(await page.evaluate(()=>window.__michiDebug.map().open),false);assert.equal(await page.evaluate(()=>window.__michiDebug.warpBusy()),false);

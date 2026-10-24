@@ -62,7 +62,7 @@ function withMockBrowser(callback,embedded=false){
     const game=createGameInput({
       canvas:element,joystick:element,knob:element,runButton:element,
       onLook:(...v)=>looks.push(v),onZoom(){},
-      onModeToggle:()=>toggles.push('X'),onInteract:()=>interactions.push('A'),onCharacter:()=>characters.push('Y'),onBack:()=>backs.push('B'),
+      onModeToggle:()=>toggles.push('X'),onInteract:()=>interactions.push('A'),onCharacter:id=>characters.push(id),onBack:()=>backs.push('B'),
       onMapControl:(...v)=>mapCalls.push(v),
       isActive:()=>true
     });
@@ -77,11 +77,11 @@ function withMockBrowser(callback,embedded=false){
   }
 }
 
-test('GC201 walking, ZR dash, A edge, map controls and disconnect',()=>{
+test('GC201 walking, L3 dash, A edge, map controls and disconnect',()=>{
   withMockBrowser(({game,pad,toggles,interactions,looks,mapCalls})=>{
     game.pollGamepad(0.016,'walk'); // neutral arm
     pad.axes=[0.6,-0.6,0.5,0];
-    pad.buttons[7].pressed=true;
+    pad.buttons[10].pressed=true;
     game.pollGamepad(0.016,'walk');
     const intent=game.getIntent();
     assert.ok(intent.forward>0&&intent.right>0);
@@ -92,7 +92,7 @@ test('GC201 walking, ZR dash, A edge, map controls and disconnect',()=>{
     game.pollGamepad(0.016,'walk');game.pollGamepad(0.016,'walk');
     assert.equal(interactions.length,1,'held A must not collect twice');
     pad.buttons[2].pressed=true;game.pollGamepad(.016,'walk');assert.equal(toggles.length,1);
-    pad.buttons[0].pressed=false;pad.buttons[7].pressed=false;
+    pad.buttons[0].pressed=false;pad.buttons[10].pressed=false;
     game.pollGamepad(0.016,'map');
     assert.ok(mapCalls.length>=1);
     pad.buttons[6].pressed=true;
@@ -133,11 +133,15 @@ test('existing touch and keyboard controls remain present',()=>{
   assert.doesNotMatch(src,/ゲームパッドメニュー|innerHTML\s*=/);
 });
 
- test('Y and B are local edges and held input is released until neutral after mode reset',()=>{
+ test('L direct choice and B are local edges and held input is released until neutral after mode reset',()=>{
   withMockBrowser(({game,pad,characters,backs})=>{
-   game.pollGamepad(.016,'walk');pad.buttons[3].pressed=true;game.pollGamepad(.016,'walk');game.pollGamepad(.016,'walk');assert.equal(characters.length,1);
+   game.pollGamepad(.016,'walk');pad.buttons[4].pressed=true;game.pollGamepad(.016,'walk');game.pollGamepad(.016,'walk');assert.equal(characters.length,1);
    pad.buttons[1].pressed=true;game.pollGamepad(.016,'map');assert.equal(backs.length,1);
    pad.axes[0]=1;game.reset();game.pollGamepad(.016,'walk');assert.equal(game.getIntent().right,0);
    pad.axes[0]=0;pad.buttons.forEach(b=>b.pressed=false);game.pollGamepad(.016,'walk');pad.axes[0]=1;game.pollGamepad(.016,'walk');assert.equal(game.getIntent().right,1);
   },true);
+ });
+
+ test('L3 toggles once per press, survives stopping, cancels on map and neutral-rearms',()=>{
+ withMockBrowser(({game,pad,characters})=>{game.pollGamepad(.016);pad.buttons[10].pressed=true;game.pollGamepad(.016);game.pollGamepad(.016);assert.equal(game.getIntent().run,true);pad.axes[0]=0;game.pollGamepad(.016);assert.equal(game.getIntent().run,true);pad.buttons[10].pressed=false;game.pollGamepad(.016);pad.buttons[10].pressed=true;game.pollGamepad(.016);assert.equal(game.getIntent().run,false);pad.buttons[10].pressed=false;game.pollGamepad(.016);pad.buttons[10].pressed=true;game.pollGamepad(.016);game.pollGamepad(.016,'map');assert.equal(game.getIntent().run,false);pad.buttons[5].pressed=true;game.pollGamepad(.016,'map');assert.deepEqual(characters,[]);game.reset();game.pollGamepad(.016);assert.equal(game.getIntent().run,false);pad.buttons.forEach(b=>b.pressed=false);game.pollGamepad(.016);pad.buttons[7].pressed=true;pad.buttons[3].pressed=true;game.pollGamepad(.016);assert.equal(game.getIntent().run,false);assert.deepEqual(characters,[]);});
  });

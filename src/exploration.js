@@ -1,3 +1,4 @@
+import {icon} from './notebook-ui.js';
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {clone as cloneSkinned} from 'three/addons/utils/SkeletonUtils.js';
@@ -17,8 +18,16 @@ export function createExploration({scene,container,baseURL,baseElevation,ground,
  const records=createDiscoveryStore(storage),tiles=new Map(),loaded=new Map(),live=new Map(),templates=new Map(),loader=new GLTFLoader();
  const abort=new AbortController(),{signal}=abort;let elapsed=0,time=0,closed=false,mode='walk',px=0,pz=0,nearest=null,errorCount=0;
  const limit=low?6:12,interval=low?.2:.1;let sharedColormap=null;
- const pickup=document.createElement('button');pickup.id='explore-pickup';pickup.hidden=true;pickup.textContent='ひろう';pickup.title='E / コントローラー A';pickup.setAttribute('aria-label','宝物をひろう');
+ const pickup=document.createElement('button');pickup.id='explore-pickup';pickup.hidden=true;pickup.innerHTML=icon('hand');pickup.title='E / コントローラー A';pickup.setAttribute('aria-label','宝物をひろう');
  container.append(pickup);
+ const highlight=new THREE.Group(),ringGeometry=new THREE.RingGeometry(.55,.65,24),ringMaterial=new THREE.MeshBasicMaterial({color:0x245b4d,side:THREE.DoubleSide,depthWrite:false}),paperMaterial=new THREE.MeshBasicMaterial({color:0xfff5df,side:THREE.DoubleSide,depthWrite:false});
+ const paperRing=new THREE.Mesh(new THREE.RingGeometry(.50,.71,24),paperMaterial),ring=new THREE.Mesh(ringGeometry,ringMaterial);paperRing.rotation.x=ring.rotation.x=-Math.PI/2;paperRing.position.y=.06;ring.position.y=.07;highlight.add(paperRing,ring);
+ const diamond=new THREE.Mesh(new THREE.OctahedronGeometry(.12,0),ringMaterial);diamond.position.y=1;highlight.add(diamond);paperRing.renderOrder=5;ring.renderOrder=6;diamond.renderOrder=6;highlight.visible=false;scene.add(highlight);
+ const success=new THREE.Group(),successMaterial=new THREE.LineBasicMaterial({color:0x245b4d,depthTest:true});
+ const successGeometry=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-.7,.4,0),new THREE.Vector3(-.9,.7,0),new THREE.Vector3(0,.8,0),new THREE.Vector3(0,1.2,0),new THREE.Vector3(.7,.4,0),new THREE.Vector3(.9,.7,0)]);const successLines=new THREE.LineSegments(successGeometry,successMaterial);successLines.renderOrder=6;success.add(successLines);success.visible=false;scene.add(success);let successUntil=0,lastCamera=null,lastOccluders=[];
+ const raycaster=new THREE.Raycaster(),targetPoint=new THREE.Vector3(),rayDirection=new THREE.Vector3(),projected=new THREE.Vector3();
+ function visible(item){if(!lastCamera)return false;const v=live.get(item.id);if(!v?.ready||records.taken.has(item.id))return false;targetPoint.copy(v.group.position);targetPoint.y+=.35;projected.copy(targetPoint).project(lastCamera);if(projected.z < -1||projected.z>1||Math.abs(projected.x)>.98||Math.abs(projected.y)>.98)return false;rayDirection.copy(targetPoint).sub(lastCamera.position);const distance=rayDirection.length();raycaster.set(lastCamera.position,rayDirection.normalize());raycaster.far=Math.max(0,distance-.4);for(const object of lastOccluders)object.updateWorldMatrix(true,false);return !raycaster.intersectObjects(lastOccluders,true).length;}
+
  const safeGround=(x,z,fallback)=>{try{const y=ground(x,z);return Number.isFinite(y)?y:fallback;}catch{return fallback;}};
  const model=type=>{if(!templates.has(type))templates.set(type,loader.loadAsync(models[type]).then(gltf=>{const retired=new Set();gltf.scene.traverse(o=>{for(const m of o.material?Array.isArray(o.material)?o.material:[o.material]:[]){if(!m.map)continue;if(!sharedColormap)sharedColormap=m.map;else if(m.map!==sharedColormap){retired.add(m.map);m.map=sharedColormap;}}});retired.forEach(t=>t.dispose());return gltf;}).catch(e=>{errorCount++;throw e;}));return templates.get(type);};
  async function register(entry){
@@ -35,10 +44,10 @@ export function createExploration({scene,container,baseURL,baseElevation,ground,
   }catch{if(live.get(item.id)===v)stop(item.id);}
  }
  function discover(type){return records.discover(type);}
- function collect(){if(mode!=='walk'||!nearest)return false;const p=nearest;const result=records.collect(p);if(!result)return false;stop(p.id);nearest=null;pickup.hidden=true;onCollect();return true;}
+ function collect(){if(mode!=='walk'||!nearest||Math.hypot(nearest.x-px,nearest.z-pz)>4.5||!visible(nearest))return false;const p=nearest;const result=records.collect(p);if(!result)return false;success.scale.setScalar(1);success.position.copy(live.get(p.id).group.position);success.visible=true;successUntil=time+.45;highlight.visible=false;stop(p.id);nearest=null;pickup.hidden=true;onCollect();return true;}
  pickup.addEventListener('click',collect,{signal});
- function update({dt,playerX,playerZ,currentMode}){
-  if(closed)return;mode=currentMode;px=playerX;pz=playerZ;elapsed+=dt;time+=dt;if(elapsed<interval)return;elapsed=0;
+ function update({dt,playerX,playerZ,currentMode,camera,occluders=[]}){
+  if(closed)return;lastCamera=camera;lastOccluders=occluders;mode=currentMode;px=playerX;pz=playerZ;elapsed+=dt;time+=dt;success.visible=time<successUntil&&mode==='walk';if(success.visible&&!low&&!matchMedia('(prefers-reduced-motion: reduce)').matches)success.scale.setScalar(1+(time-(successUntil-.45))*.6);if(elapsed<interval)return;elapsed=0;
   const desired=nearbySpawns([...loaded.values()].flat(),px,pz,{limit,radius:65,taken:records.taken}),ids=new Set(desired.map(p=>p.id));
   if(mode!=='walk')ids.clear();for(const k of [...live.keys()])if(!ids.has(k))stop(k);
   if(mode==='walk')for(const p of desired)if(!live.has(p.id))void start(p);
@@ -46,7 +55,7 @@ export function createExploration({scene,container,baseURL,baseElevation,ground,
   for(const v of live.values()){
    if(!v.ready)continue;v.mixer?.update(interval);const p=v.item,d=OBJECTS[p.type],distance=Math.hypot(p.x-px,p.z-pz),phase=(hash(p.id)%628)/100;
    v.group.visible=mode==='walk';if(d.kind==='animal'&&distance<d.notice)discover(p.type);
-   if(d.kind==='treasure'&&distance<closest){closest=distance;nearest=p;}
+   if(d.kind==='treasure'&&distance<closest&&visible(p)){closest=distance;nearest=p;}
    {if(distance<5)v.reaction=1;else if(distance>10)v.reaction=Math.max(0,v.reaction-.08);}
    v.state=v.reaction>0?'react':'idle';
    const drift=d.kind==='animal'&&p.type==='caterpillar'?(v.reaction?.03:.18):0;
@@ -55,9 +64,10 @@ export function createExploration({scene,container,baseURL,baseElevation,ground,
    v.group.position.set(x,y+(p.type==='bird'?v.reaction*(1.2+.15*Math.sin(time*8)):0),z);
    v.group.rotation.y=phase+(p.type==='caterpillar'?Math.sin(time*.5)*.3:0);
   }
-  pickup.hidden=!nearest||mode!=='walk';pickup.textContent=nearest?OBJECTS[nearest.type].name+'を ひろう':'ひろう';
+  highlight.visible=!!nearest&&mode==='walk';if(highlight.visible)highlight.position.copy(live.get(nearest.id).group.position);
+  pickup.hidden=!nearest||mode!=='walk';pickup.setAttribute('aria-label','宝物をひろう');
  }
- function snapshot(){return {loadedTiles:[...loaded.keys()].sort(),loadedCount:[...loaded.values()].reduce((n,a)=>n+a.length,0),live:[...live.values()].map(v=>({...v.item,ready:v.ready,state:v.state,position:v.group.position.toArray()})),nearest:nearest?.id||null,limit,errors:errorCount,records:records.snapshot()};}
- function dispose(){closed=true;abort.abort();for(const t of tiles.values())t.controller.abort();for(const id of [...live.keys()])stop(id);for(const p of templates.values())p.then(g=>{const gs=new Set(),ms=new Set(),ts=new Set();g.scene.traverse(o=>{if(o.geometry)gs.add(o.geometry);for(const m of o.material?Array.isArray(o.material)?o.material:[o.material]:[]){ms.add(m);for(const value of Object.values(m))if(value?.isTexture)ts.add(value);}});gs.forEach(g=>g.dispose());ms.forEach(m=>m.dispose());ts.forEach(t=>t.dispose());}).catch(()=>{});for(const el of [pickup])el.remove();}
+ function snapshot(){return {loadedTiles:[...loaded.keys()].sort(),loadedCount:[...loaded.values()].reduce((n,a)=>n+a.length,0),live:[...live.values()].map(v=>({...v.item,ready:v.ready,state:v.state,position:v.group.position.toArray()})),nearest:nearest?.id||null,highlight:highlight.visible,success:success.visible,limit,errors:errorCount,records:records.snapshot()};}
+ function dispose(){scene.remove(highlight,success);ringGeometry.dispose();paperRing.geometry.dispose();diamond.geometry.dispose();ringMaterial.dispose();paperMaterial.dispose();successGeometry.dispose();successMaterial.dispose();closed=true;abort.abort();for(const t of tiles.values())t.controller.abort();for(const id of [...live.keys()])stop(id);for(const p of templates.values())p.then(g=>{const gs=new Set(),ms=new Set(),ts=new Set();g.scene.traverse(o=>{if(o.geometry)gs.add(o.geometry);for(const m of o.material?Array.isArray(o.material)?o.material:[o.material]:[]){ms.add(m);for(const value of Object.values(m))if(value?.isTexture)ts.add(value);}});gs.forEach(g=>g.dispose());ms.forEach(m=>m.dispose());ts.forEach(t=>t.dispose());}).catch(()=>{});for(const el of [pickup])el.remove();}
  return {register,unregister,update,collect,discover,snapshot,dispose};
 }

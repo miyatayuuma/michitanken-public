@@ -1,0 +1,29 @@
+# MT-07E-1 notebook UI and input repair
+
+Implementation approval: 2026-10-25. Approved design is PUBLIC PR #17 at f509e5cd4641d1187413c0b24b072ec5633098c6, `docs/mt07e0/{design-system,handoff,audit}.md`. That design-only branch is unchanged. This branch depends on #16 e64806cbd2222897cc3f444cc6f405d4fd8122aa; it does not merge or replace the earlier PRs.
+
+The notebook tokens, original single-family SVG paths, panel/button/focus states now cover the runtime HUD, map, character choices, pickup, menu, loading and error screens. The map remains north-up, uses one reversible transform for raster/fog/markers/player/hits, anchored 1–4x zoom, drag/pinch suppression and zoom-derived scale. Labels use non-overlapping boxes; the selection card exposes the full name. Wheel, pinch, buttons, keyboard pan and standard-pad shoulders/stick are supported.
+
+Camera compass uses the actual camera's horizontal world direction, unwraps the angle across ±π, and retains the last bearing for a vertical view. Player heading is not the source. L3 is an edge-only dash toggle; stopping retains it, mode changes/reset/blur/disconnect/parent release clear it, and neutral rearm protects reconnection. Shift and touch remain holds. L/R directly select cat/rabbit in walking mode and zoom in map mode; Y/ZR pad bindings are removed. Re-selecting the current character preserves the animator.
+
+Normal DOM no longer mounts reset/road/building switches, statistics, coordinates, the brand strip or hint/footer containers. Rendering and existing development test hooks remain. Source attributions are preserved in the menu. No private audit data is added to production assets. Embedded mode omits child audio preferences; standalone mode uses DreamCoreAudio when provided by the production wrapper. Start opens the menu; B closes it; pad d-pad navigates/settings adjust; A activates the focused action. The parent owns A edges in an iframe, and the child polls standalone A only.
+
+Pickup is an icon and static nearest-treasure ring/diamond, limited to a visible uncollected treasure in range with a clear camera ray through terrain/buildings. Animals are excluded. Collection revalidates visibility, uses the existing deduplication/persistence store, removes the highlight and emits a 450ms effect plus existing shared SE. Discovery is one 650ms ring; arrival one 350ms ring. Reduced-motion and low-memory modes retain static effects. No postprocess, extra shadow, persistent animation loop or new texture is introduced.
+
+Automated checks do not accept the physical GC201 labels, mobile device, hardware GPU, perceived sound or child UX. Private real-data and parent integration evidence belongs in PRIVATE repositories. Firebase deploy and merging are not performed by this task.
+
+Reproduction: `npm test`, `npm run build`; generate a fresh fictional fixture using `scripts/create-biome-fixture.mjs`, `generate-exploration.mjs`, `generate-map.mjs`, `create-warp-fixture.mjs`; run `browser-map.mjs` before adding warp fixture and `browser-warp.mjs` afterward. `browser-notebook.mjs ROOT OUT` covers runtime layouts and transformed input; evidence inherits ROOT visibility.
+
+## Automated acceptance
+
+100 unit tests and the public build passed. PUBLIC CI at dbbc84381eae27e628c0ead95b1ff9b3b233ad4b passed engine checks (40108375018) and fictional browser acceptance (40108375027), including the new notebook/occlusion harnesses. Final commits are rechecked separately in the PR.
+
+PRIVATE runtime proximity discovery found 22 sites in each of desktop, mobile portrait, mobile landscape, and 320px/200%-text/reduced-motion/2GB modes. 22 markers × 3 zooms × 4 layouts = 264 exact hit checks passed. A separate saved-map rendering pass retested the final edge padding without treating seeded discovery as proximity evidence. Four actual-camera directions, mouse wheel, touch pinch, drag suppression, keyboard/pad pan, L3 hold/edge and shoulder-mode isolation passed. Reduced-motion/low-memory were combined in the narrow case, rather than claimed as every combination of independent settings.
+
+PRIVATE 20-warp acceptance ran desktop and mobile with three rounds each (120 transactions), movement after arrival, undiscovered/unconfirmed/missing rejection, failure/cancel/late restore and save/reload. The input reset bug that ate a fresh post-warp key was fixed and that full harness rerun. Updated map edge layout and arrival visuals are additionally covered by final UI/parent checks; physical device acceptance remains open.
+
+Synthetic collection fixture proves visible nearest choice, full wall occlusion rejection, one collect/one SE, effect expiry and saved restoration. Real-data PC/mobile pickup/duplicate/reload and screenshots were captured. Visual QA found and corrected the static ring being painted before the terrain: paper rim/ring/diamond and success lines now have explicit late render order while retaining depth testing. Terrain/building world matrices and pickup distance are revalidated.
+
+DreamCore parent PC/mobile checks passed L/R direct choice, A without duplicate virtual click, X/B map handling, no child volume panel, movement and back to hub. All eight games launch/back and shared audio persistence/iframe sync/live gain/mute/recovery passed. Four biome BGM transitions passed. Warm-cache PWA offline startup passed on desktop/mobile; unvisited areas and unrequested BGM are outside that offline guarantee.
+
+Visual implementation preserves the approved colors/icons/48px controls and paper layout. Actual map markers remain game-scale; titles/attribution wrap, map labels avoid collisions and full names appear in the card. Edge padding, scrollable settings, a focus-trapped menu and measured text-resize layout replace the prototype's static layout assumptions. World art/models and original sprites are unchanged. Final screenshots and performance evidence stay PRIVATE because they contain actual geography/artwork.

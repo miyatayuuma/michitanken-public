@@ -34,6 +34,10 @@ export function createSpriteAvatar(config,texture){
  return {
   group,
   reset:()=>animator.reset(),
+  selectCharacter(id){
+   if(character===id)return character;const next=config.characters?.find(c=>c.id===id);if(!next)return null;
+   activeConfig=validateSpriteConfig({...config,animations:next.animations});character=next.id;animator=createSpriteAnimator(activeConfig,current.flipped);current={...current,frame:-1};setFrame(activeConfig.animations.idle[0]);return character;
+  },
   switchCharacter(){
    if(!config.characters?.length)return null;
    const index=config.characters.findIndex(c=>c.id===character),next=config.characters[(index+1)%config.characters.length];

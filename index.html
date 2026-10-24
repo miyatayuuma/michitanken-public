@@ -3,33 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#142c2c">
+<meta name="theme-color" content="#fff5df">
 <title>みちたんけん | 架空の街を歩く</title>
 </head>
 <body>
 <div id="app" data-mode="walk">
-<header class="toolbar">
-  <div class="brand"><strong>みちたんけん</strong></div>
-  <div class="buttons">
-    <button id="mode" class="selected" aria-label="全体マップを開く">マップ</button>
-    <button id="reset">位置を戻す</button>
-    <button id="roads" class="selected" aria-pressed="true">道路</button>
-    <button id="buildings" class="selected" aria-pressed="true">建物</button>
-  </div>
-</header>
 <main>
-  <div id="scene" role="region" aria-label="架空の3Dフィールド。歩行モードではドラッグで視点を動かせます"></div>
-  <div id="status" role="status">地理データを読み込んでいます…</div>
-  <aside id="details"></aside>
-  <output id="player-coords" aria-label="プレイヤーの位置"></output>
-  <div class="compass">N ↑</div>
-  <div id="joystick" class="game-control" aria-label="移動スティック">
-    <div id="joystick-knob"></div>
-  </div>
-  <button id="run" class="game-control" aria-label="押している間走る">走る</button>
-</main>
-<footer><span id="hint"></span><span>サンプルは架空の地形です（実際の位置情報は含みません）</span></footer>
-</div>
+<div id="scene" role="region" aria-label="3Dフィールド。ドラッグで視点を動かせます"></div>
+<header class="toolbar"><div class="stack"><button id="mode" aria-label="地図を開く" class="icon paper" aria-expanded="false"></button><div id="characters" class="characters"></div></div><div class="stack"><div class="compass paper" aria-label="北の方向"><span class="north-needle">N ↑</span></div><button id="menu-open" class="icon paper" aria-label="メニュー" aria-expanded="false"></button></div></header>
+<div id="status" class="paper" role="status">じゅんびしています…</div><button id="retry" class="paper" hidden>もういちど</button>
+<div id="joystick" class="game-control" aria-label="移動スティック"><div id="joystick-knob"></div></div>
+<button id="run" class="game-control" aria-label="押している間走る"></button>
+<section id="notebook-menu" class="paper" aria-label="メニュー" hidden><button id="menu-close" class="paper">とじる</button><h1>道たんけん</h1><div id="standalone-audio"></div><div class="credits"><span>サンプルは架空の地形です（実際の位置情報は含みません）</span></div></section>
+</main></div>
 <script type="module" src="/src/main.js"></script>
-</body>
-</html>
+</body></html>

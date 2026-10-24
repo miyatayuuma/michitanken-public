@@ -8,14 +8,14 @@ const keyFor=e=>e.key.toLowerCase();
  * Return intention only; the deterministic movement system owns position and collision.
  * Mobile: left thumb for movement, drag on canvas for looking, right thumb to run.
  */
-export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,onModeToggle=()=>{},onInteract=()=>{},onBack=()=>{},onCharacter=()=>{},onMapControl=()=>{},onActivity=()=>{},isActive=()=>true}){
+export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,onModeToggle=()=>{},onInteract=()=>{},onBack=()=>{},onCharacter=()=>{},onMapControl=()=>{},onMapZoom=()=>{},onMenu=()=>{},onMenuMove=()=>{},onMenuAdjust=()=>{},onActivity=()=>{},isActive=()=>true}){
   const abort=new AbortController(),{signal}=abort;
   const keys=new Set(),pressed=new Map();let inputMode='walk';const modeForKeys=()=>inputMode;
   let joyId=null,runId=null,runHeld=false,joyX=0,joyY=0;
   const lookPointers=new Map();
   let pinchDistance=null;
   const listen=(target,type,handler,options={})=>target.addEventListener(type,handler,{...options,signal});
-  let padSignature='',padArmed=false,padButtons=[],padX=0,padY=0,padRun=false,padActive=false;
+  let menuDirection=0;let padSignature='',padArmed=false,padButtons=[],padX=0,padY=0,padRun=false,padActive=false;
   const cursorMode=()=> 'off',captureA=()=>true;
   // The DreamCore parent still relays A, but must never generate a virtual click.
   window.__dreamcoreGamepadCursorMode=cursorMode;
@@ -33,13 +33,13 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
   listen(window,'message',e=>{
     if(window.parent===window||e.source!==window.parent||e.origin!==location.origin||
       e.data?.type!==GAMEPAD_MESSAGE)return;
-    if(e.data.action==='release-all'){resetGamepad();return;}
+    if(e.data.action==='release-all'){resetInput();resetGamepad();return;}
     if(e.data.action==='button'&&e.data.button===0&&e.data.phase==='down'&&padArmed){
-      onActivity();onInteract();
+      onActivity('pad');onInteract();
     }
   });
   function pollGamepad(dt,mode='walk'){
-    inputMode=mode;if(document.hidden){resetGamepad();return;}
+    if(inputMode!==mode){padRun=false;inputMode=mode;}if(document.hidden){resetGamepad();return;}
     if(mode==='map'&&keys.size)onMapControl({moveX:(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0),moveY:(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)},Math.min(dt,.05));
     const pad=getPad();
     if(!pad){resetGamepad();return;}
@@ -54,9 +54,9 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
       return;
     }
     padX=left.x;padY=left.y;padActive=Math.hypot(padX,padY)>0;
-    padRun=!!buttons[7];
+
     const seconds=clamp(Number.isFinite(dt)?dt:0,0,0.05);
-    if(buttons.some(Boolean)||left.x||left.y||right.x||right.y)onActivity();
+    if(buttons.some(Boolean)||left.x||left.y||right.x||right.y)onActivity('pad');
     if(mode==='walk'){
       if(isActive()&&seconds&&(right.x||right.y))onLook(-right.x*1.8*seconds,-right.y*1.1*seconds);
     }else if(mode==='map'){
@@ -66,14 +66,29 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
     if(window.parent===window&&buttons[0]&&!padButtons[0])onInteract();
     if(buttons[2]&&!padButtons[2])onModeToggle();
     if(buttons[1]&&!padButtons[1])onBack();
-    if(buttons[3]&&!padButtons[3])onCharacter();
+    if(mode==='walk'&&isActive()){
+      if(buttons[10]&&!padButtons[10])padRun=!padRun;
+      if(buttons[4]&&!padButtons[4])onCharacter('cat');
+      if(buttons[5]&&!padButtons[5])onCharacter('rabbit');
+    }else if(mode==='map'){
+      if(buttons[4]&&!padButtons[4])onMapZoom(-1);
+      if(buttons[5]&&!padButtons[5])onMapZoom(1);
+    }else if(mode==='menu'){
+      if(buttons[12]&&!padButtons[12])onMenuMove(-1);
+      if(buttons[13]&&!padButtons[13])onMenuMove(1);
+      if(buttons[14]&&!padButtons[14])onMenuAdjust(-5);
+      if(buttons[15]&&!padButtons[15])onMenuAdjust(5);
+      const vertical=left.y>.55?1:left.y<-.55?-1:0;
+      if(vertical&&vertical!==menuDirection)onMenuMove(vertical);menuDirection=vertical;
+    }
+    if(buttons[9]&&!padButtons[9])onMenu();
     padButtons=buttons;
   }
   listen(window,'gamepaddisconnected',resetGamepad);
   const movementKeys=new Set(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','shift']);
   listen(window,'keydown',e=>{
-    const key=keyFor(e);onActivity();
-    if(!e.repeat&&!e.ctrlKey&&!e.altKey&&!e.metaKey){if(key==='e'){onInteract();e.preventDefault();}if(key==='m'||key==='x'){onModeToggle();e.preventDefault();}if(key==='escape')onBack();if(key==='c'||key==='y'){onCharacter();e.preventDefault();}if(key==='enter'&&modeForKeys()==='map'){onInteract();e.preventDefault();}}
+    const key=keyFor(e);if(e.target?.matches?.('input,select,textarea')||inputMode==='menu') {if(key==='escape')onBack();return;}onActivity('keyboard');
+    if(!e.repeat&&!e.ctrlKey&&!e.altKey&&!e.metaKey){if(key==='e'){onInteract();e.preventDefault();}if(key==='m'||key==='x'){onModeToggle();e.preventDefault();}if(key==='escape')onBack();if(key==='c'){onCharacter();e.preventDefault();}if(key==='enter'&&modeForKeys()==='map'){onInteract();e.preventDefault();}}
     if(e.repeat&&keys.has(key))return;
     if(movementKeys.has(key)&&!e.ctrlKey&&!e.altKey&&!e.metaKey){
       keys.add(key);e.preventDefault();
@@ -96,7 +111,7 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
   };
   listen(joystick,'pointerdown',e=>{
     if(!isActive()||joyId!==null)return;
-    joyId=e.pointerId;pressed.set('joystick',e.pointerId);
+    onActivity('touch');joyId=e.pointerId;pressed.set('joystick',e.pointerId);
     joystick.setPointerCapture(e.pointerId);updateJoystick(e);e.preventDefault();
   });
   listen(joystick,'pointermove',e=>{if(e.pointerId===joyId){updateJoystick(e);e.preventDefault();}});
@@ -105,7 +120,7 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
   listen(joystick,'pointercancel',stopJoy);
   listen(joystick,'lostpointercapture',stopJoy);
   listen(runButton,'pointerdown',e=>{
-    if(!isActive())return;runId=e.pointerId;runHeld=true;runButton.classList.add('holding');
+    if(!isActive())return;onActivity('touch');runId=e.pointerId;runHeld=true;runButton.classList.add('holding');
     runButton.setPointerCapture(e.pointerId);e.preventDefault();
   });
   const stopRun=e=>{if(e.pointerId===runId){runId=null;runHeld=false;runButton.classList.remove('holding');}};
@@ -116,7 +131,7 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
   }
   listen(canvas,'pointerdown',e=>{
     if(!isActive()||(e.pointerType==='mouse'&&e.button!==0))return;
-    lookPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    onActivity(e.pointerType==='touch'?'touch':'mouse');lookPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(lookPointers.size>=2)pinchDistance=distanceOfTwo();
     canvas.setPointerCapture(e.pointerId);e.preventDefault();
   });
