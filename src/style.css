@@ -7,3 +7,4 @@
 #map-selection>span,#map-selection>small{display:block}#map-selection>small{font-weight:400;font-size:.75rem;color:var(--quiet);margin-top:3px}
 @media(min-width:651px) and (min-height:501px){.map-card{bottom:18px}}
 @media(min-width:651px) and (max-height:500px){.map-card{left:auto;right:16px;translate:none;width:240px;bottom:78px}}
+#map-warp{white-space:nowrap;max-width:none}
