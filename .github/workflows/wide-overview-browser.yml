@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'src/notebook-ui.js'
+      - 'src/compass.js'
+      - 'scripts/browser-compass-a.mjs'
       - 'lib/map-view.mjs'
       - 'lib/map-marker.mjs'
       - 'scripts/browser-small-markers.mjs'
@@ -78,6 +80,7 @@ jobs:
           node scripts/create-warp-fixture.mjs "$BIOME_FIXTURE"
           node scripts/browser-warp.mjs "$BIOME_FIXTURE" artifacts/mt07c
           node scripts/browser-notebook.mjs "$BIOME_FIXTURE" artifacts/mt07e1
+          node scripts/browser-compass-a.mjs "$BIOME_FIXTURE" artifacts/mt07e2b
           node scripts/browser-small-markers.mjs "$BIOME_FIXTURE" artifacts/mt07e2a
           node scripts/browser-collection-states.mjs "$BIOME_FIXTURE" artifacts/mt07e1
           python scripts/audit-spawn-safety.py "$BIOME_FIXTURE" "$BIOME_FIXTURE/public/data/biomes.json" artifacts/mt07/safety.json
@@ -91,4 +94,5 @@ jobs:
             artifacts/mt07c
             artifacts/mt07e1
             artifacts/mt07e2a
+            artifacts/mt07e2b
           if-no-files-found: ignore
