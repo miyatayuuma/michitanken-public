@@ -88,7 +88,7 @@ export function wildlifeCandidates(entry,field,overlay){
 }
 
 /** Near-field only; no artificial physics, expensive AI, or 25-tile fauna atlas. */
-export function createWildlifeRenderer({scene,baseURL,baseElevation}){
+export function createWildlifeRenderer({scene,baseURL,baseElevation,onDiscover=()=>{}}){
  const loader=new GLTFLoader(),models=new Map(),tiles=new Map(),waterProfiles=new Map(),live=new Map(),pending=new Set();
  let elapsed=0,closed=false,mode='walk',player={x:0,z:0},visibleCount=0;
  const locate=item=>({
@@ -178,6 +178,7 @@ export function createWildlifeRenderer({scene,baseURL,baseElevation}){
   for(const v of live.values()){
    v.time+=step;
    const t=v.time+v.item.phase,base=locate(v.item);
+   if(Math.hypot(base.x-playerX,base.z-playerZ)<12)onDiscover(v.item.species);
    const bee=v.item.species==='bee',height=species[v.item.species].hover;
    const x=base.x+Math.cos(t*(bee?1.7:.7))*(bee?1.15:.55);
    const z=base.z+Math.sin(t*(bee?1.5:.7))*(bee?1.05:.55);

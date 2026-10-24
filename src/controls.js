@@ -8,7 +8,7 @@ const keyFor=e=>e.key.toLowerCase();
  * Return intention only; the deterministic movement system owns position and collision.
  * Mobile: left thumb for movement, drag on canvas for looking, right thumb to run.
  */
-export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,onModeToggle=()=>{},onMapControl=()=>{},isActive=()=>true}){
+export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,onModeToggle=()=>{},onInteract=()=>{},onJournal=()=>{},onBack=()=>{},onMapControl=()=>{},isActive=()=>true}){
   const abort=new AbortController(),{signal}=abort;
   const keys=new Set(),pressed=new Map();
   let joyId=null,runId=null,runHeld=false,joyX=0,joyY=0;
@@ -56,19 +56,23 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
     padRun=!!buttons[7];
     const seconds=clamp(Number.isFinite(dt)?dt:0,0,0.05);
     if(mode==='walk'){
-      if(seconds&&(right.x||right.y))onLook(-right.x*1.8*seconds,-right.y*1.1*seconds);
+      if(isActive()&&seconds&&(right.x||right.y))onLook(-right.x*1.8*seconds,-right.y*1.1*seconds);
     }else if(mode==='map'){
       onMapControl({moveX:left.x,moveY:left.y,lookX:right.x,lookY:right.y,
         zoomOut:Number(!!buttons[6]),zoomIn:Number(!!buttons[7])},seconds);
     }
     // Standalone mode samples A locally; in DreamCore the parent owns edges.
     if(window.parent===window&&buttons[0]&&!padButtons[0])onModeToggle();
+    if(buttons[2]&&!padButtons[2])onInteract();
+    if(buttons[3]&&!padButtons[3])onJournal();
+    if(buttons[1]&&!padButtons[1])onBack();
     padButtons=buttons;
   }
   listen(window,'gamepaddisconnected',resetGamepad);
   const movementKeys=new Set(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','shift']);
   listen(window,'keydown',e=>{
     const key=keyFor(e);
+    if(!e.repeat&&!e.ctrlKey&&!e.altKey&&!e.metaKey){if(key==='e'){onInteract();e.preventDefault();}if(key==='j'){onJournal();e.preventDefault();}if(key==='escape')onBack();}
     if(e.repeat&&keys.has(key))return;
     if(isActive()&&movementKeys.has(key)&&!e.ctrlKey&&!e.altKey&&!e.metaKey){
       keys.add(key);e.preventDefault();

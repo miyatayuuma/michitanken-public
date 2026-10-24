@@ -1,0 +1,1 @@
+{"name":"michi-release-toolchain","private":true,"type":"module","dependencies":{"three":"0.180.0","vite":"7.3.7"}}
