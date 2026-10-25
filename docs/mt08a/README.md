@@ -1,6 +1,6 @@
 # MT-08A — 3D roads and continuous water domains
 
-Status: river follow-up implemented; final real-data regression/performance validation in progress. User visual acceptance is separate. Existing drafts PUBLIC #22 / PRIVATE #30 continue; no merge or deployment.
+Status: technical water-domain verification and emulated performance/regression checks passed; ready for user visual acceptance. User visual acceptance is separate. Existing drafts PUBLIC #22 / PRIVATE #30 continue; no merge or deployment.
 
 ## Source and responsibility
 
@@ -41,4 +41,6 @@ node scripts/check-surface-regressions.mjs BEFORE ASSEMBLED PRIVATE_REPORT
 
 Camera captures, runtime warp checks and the counterbalanced built-production benchmark remain available through `capture-3d-surfaces`, `browser-surface-regressions` and `benchmark-surface-release`. Optional `MICHI_CHROMIUM_EXECUTABLE` selects an installed test binary. Outputs always inherit the input visibility.
 
-At the first real-data verification: 25 tiles, bank clearance >=0.179997m, 40 seams with zero one-sided samples and maximum height difference 0.000000201m. 9,000 navigation steps, 42,025 collision samples, 40 bidirectional road boundaries and all 20 landings passed. Final images, browser checks, source preservation, performance and CI are recorded in the paired PRIVATE report; physical hardware and user visual acceptance are not implied by emulation.
+At the completed real-data verification: 25 tiles, bank clearance >=0.179997m, 40 seams with zero one-sided samples and maximum height difference 0.000000201m. 9,000 navigation steps, 42,025 collision samples, 40 bidirectional road boundaries and all 20 landings passed. Final images, browser checks, source preservation, performance and CI are recorded in the paired PRIVATE report; physical hardware and user visual acceptance are not implied by emulation.
+
+All 150 full-field captures and 32 identical-camera before/after captures completed without page errors. Runtime checks passed for 40 warps across PC/mobile emulation. The three-repeat counterbalanced benchmark retained walking frame p95 (PC approximately 100ms; mobile 50ms) and static map frame p95 (approximately 16.7–16.8ms), with zero idle map redraws. These SwiftShader measurements are relative regression checks, not physical-device performance claims. See PRIVATE for the full protocol, individual runs, actual locations and remaining visual-review limitations.
