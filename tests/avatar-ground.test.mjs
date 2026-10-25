@@ -11,7 +11,7 @@ test('sprite feet follow rendered DEM triangles while physics height stays uncha
 });
 test('visual feet match actual road ribbon interpolation including folds and bridges',()=>{
  const field=fixture(),road={points:[[-4,-2],[4,3]],width:3,bridge:true};field.osm.roads=[road];
- const verts=buildRoadRibbon(...road.points,road.width,field,.4);
+ const verts=buildRoadRibbon(...road.points,road.width,field,.4,{terrainSafe:true});
  // Centroid of each actual road triangle supplies an independent raster-surface height.
  let checked=0;
  for(let i=0;i<verts.length;i+=9){
