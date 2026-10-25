@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {natureTint} from '../lib/appearance.mjs';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {terrainMeshHeight} from '../lib/geo.mjs';
+import {surfaceContainsWater} from '../lib/surface-mesh.mjs';
 
 // Kenney Nature Kit 2.1, CC0. Models are hosted by the PRIVATE game site.
 const SPEC={
@@ -39,6 +40,7 @@ function nearPath(x,z,points,clearance){
  return false;
 }
 function occupied(x,z,field,{observedCanopy=false}={}){
+ if(surfaceContainsWater(field.surface,x,z))return true;
  const osm=field.osm||{};
  for(const house of osm.buildings||[]){
   if(inside(x,z,house.footprint)||nearPath(x,z,[...house.footprint,house.footprint[0]],3))return true;

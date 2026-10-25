@@ -5,15 +5,17 @@ import {chooseSpawn,createCollisionWorld,advancePlayer,collisionReason} from '..
 import {validateLanding} from '../lib/warp.mjs';
 import {sampleVegetation} from '../src/vegetation.js';import {wildlifeCandidates} from '../src/wildlife.js';
 import {distanceToSegment} from '../lib/water-field.mjs';
+import {createSurfaceMeshLoader,surfaceContainsWater} from '../lib/surface-mesh.mjs';
 import {applyRoadSupplement} from '../lib/road-supplement.mjs';
 const [beforeArg,afterArg,out]=process.argv.slice(2),before=path.resolve(beforeArg),after=path.resolve(afterArg);
 const read=async p=>JSON.parse(await fs.readFile(p)),m=await read(before+'/public/data/tiles.json'),ma=await read(after+'/public/data/tiles.json');
 assert.deepEqual(ma.tiles,m.tiles);
 const supplement=ma.roadSupplement?await read(after+'/public/'+ma.roadSupplement):null;
+const loader=createSurfaceMeshLoader(ma,'',async url=>({ok:true,json:async()=>read(after+'/public/'+url)}));
 const worlds=[createTiledWorld(m),createTiledWorld(ma)],fields=[new Map(),new Map()],rows=[];
 for(const t of m.tiles){
  const original=await read(before+'/public/'+t.url),rawAfter=await read(after+'/public/'+t.url);assert.deepEqual(rawAfter,original);
- const corrected=applyRoadSupplement(rawAfter,t,supplement);
+ const corrected=await loader.attach(applyRoadSupplement(rawAfter,t,supplement),t);
  for(const [i,f]of [original,corrected].entries()){registerTile(worlds[i],t,f);fields[i].set(t.id,f);}
  const spawn=chooseSpawn(createCollisionWorld(original));
  const p={...spawn,x:spawn.x+t.offset[0],z:spawn.z+t.offset[1]};
@@ -25,7 +27,7 @@ for(const t of m.tiles){
   const diff=(old,now)=>{
    const key=p=>JSON.stringify(p);const a=new Set(old.map(key)),b=new Set(now.map(key));
    const removed=old.filter(p=>!b.has(key(p))),added=now.filter(p=>!a.has(key(p)));
-   for(const p of removed)assert.ok((supplement?.tiles[t.id]||[]).some(r=>distanceToSegment([p.x,p.z],...r.points).distance<=r.width/2+3.1),'unrelated placement removed '+t.id);
+   for(const p of removed)assert.ok((supplement?.tiles[t.id]||[]).some(r=>distanceToSegment([p.x,p.z],...r.points).distance<=r.width/2+3.1)||surfaceContainsWater(corrected.surface,p.x,p.z),'unrelated placement removed '+t.id);
    return {before:old.length,after:now.length,removed,added};
   };
   rows.at(-1).vegetation=diff(sampleVegetation(t,original,cover),sampleVegetation(t,corrected,cover));
@@ -39,7 +41,7 @@ for(const row of rows){for(const yaw of [0,Math.PI/2,Math.PI,Math.PI*1.5]){
 for(const t of m.tiles)for(let z=-240;z<=240;z+=12)for(let x=-240;x<=240;x+=12){
  const px=x+t.offset[0],pz=z+t.offset[1],old=collisionReason(worlds[0],px,pz),now=collisionReason(worlds[1],px,pz);
  // Only source-backed missing bridge corridors may turn an obstacle into access.
- if(now!==old){assert.equal(now,null);assert.ok(['water-area','waterway','railway'].includes(old));assert.ok((supplement?.tiles[t.id]||[]).some(r=>r.bridge));}
+ if(now!==old){if(now==='water-area'){assert.ok(fields[1].get(t.id).surface,'No source water authority');}else{assert.equal(now,null);assert.ok(['water-area','waterway','railway'].includes(old));assert.ok((supplement?.tiles[t.id]||[]).some(r=>r.bridge)||fields[1].get(t.id).surface);}}
  collisionSamples++;
 }
 const seams=[];

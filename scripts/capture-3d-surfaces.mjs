@@ -8,7 +8,7 @@ import {chromium} from 'playwright';
 const [rootArg,casesArg,outArg]=process.argv.slice(2),root=path.resolve(rootArg),out=path.resolve(outArg);
 const cases=JSON.parse(await fs.readFile(casesArg));await fs.mkdir(out,{recursive:true});
 const server=await createServer({root,server:{host:'127.0.0.1',port:8108,strictPort:true,fs:{allow:[root]}}});await server.listen();
-const browser=await chromium.launch({args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+const browser=await chromium.launch({executablePath:process.env.MICHI_CHROMIUM_EXECUTABLE||undefined,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
 const rows=[];
 try{for(const device of ['pc','mobile']){
  const context=await browser.newContext({viewport:device==='pc'?{width:1280,height:800}:{width:390,height:844},deviceScaleFactor:1,isMobile:device==='mobile',hasTouch:device==='mobile'});

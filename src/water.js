@@ -8,13 +8,14 @@ import {riverVertexShader,riverFragmentShader} from './river-shader.js';
 const RIVER_BASE_COLOR=0x4b9dc1;
 const SHADER_TEXTURE_FREE=true;
 
-function createBuffer(positions,flows,stations,laterals,shores){
+function createBuffer(positions,flows,stations,laterals,shores,indices=null){
  const geom=new THREE.BufferGeometry();
  geom.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
  geom.setAttribute('aFlow',new THREE.Float32BufferAttribute(flows,2));
  geom.setAttribute('aStation',new THREE.Float32BufferAttribute(stations,1));
  geom.setAttribute('aLateral',new THREE.Float32BufferAttribute(laterals,1));
  geom.setAttribute('aShore',new THREE.Float32BufferAttribute(shores,1));
+ if(indices)geom.setIndex(indices);
  geom.computeVertexNormals();
  return geom;
 }
@@ -82,12 +83,13 @@ export function createWaterLayer(field,{flat=false,sharedProfiles=null,detail='f
  const group=new THREE.Group();group.name='mapped-water';
  const paths=buildFlowPaths(field.osm.waterways||[]);
  const profiles=sharedProfiles||fitWaterProfiles(paths,field.terrain);
- const uniforms={uTime:{value:0},uMotion:{value:1}};
+ const prepared=field.surface?.water;
+ const uniforms={uTime:{value:0},uMotion:{value:1},uDomainFlow:{value:prepared?1:0}};
  const sharedMaterial=flat
-  ?new THREE.MeshLambertMaterial({color:RIVER_BASE_COLOR,side:THREE.DoubleSide,depthTest:false,depthWrite:false})
+  ?new THREE.MeshLambertMaterial({color:RIVER_BASE_COLOR,side:THREE.DoubleSide,depthTest:!!prepared,depthWrite:!!prepared})
   :new THREE.ShaderMaterial({
     uniforms,vertexShader:riverVertexShader,fragmentShader:riverFragmentShader,
-    depthTest:false,depthWrite:false,side:THREE.DoubleSide,transparent:false
+    depthTest:!!prepared,depthWrite:!!prepared,side:THREE.DoubleSide,transparent:false
   });
  const areas=field.osm.waterAreas||[];
  const summary={areas:0,ribbons:0,triangles:0,flowPaths:paths.length,limited:false,mode:flat?'flat':'procedural',detail,textureFree:SHADER_TEXTURE_FREE};
@@ -100,6 +102,14 @@ export function createWaterLayer(field,{flat=false,sharedProfiles=null,detail='f
   summary.triangles+=result.triangles;
   summary.limited ||=result.limited;
  };
+ if(prepared){
+  if(prepared.indices.length){
+   const g=createBuffer(prepared.positions,prepared.flow,prepared.station,prepared.lateral,prepared.shore,prepared.indices);
+   add({geometry:g,triangles:prepared.indices.length/3,limited:false},'water-domain');
+  }
+  summary.areas=field.surface.coverage.length;summary.prepared=true;
+  return {group,uniforms,summary,profiles};
+ }
  for(const area of areas){
   const geometry=buildAreaGeometry(field,area,profiles,detail);
   if(!geometry)continue;

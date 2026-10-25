@@ -7,7 +7,7 @@ const read=async p=>JSON.parse(await fs.readFile(root+'/public/data/'+p));
 const pois=await read('pois.json'),map=await read('exploration-map.json'),warps=await read('warps.json');let saved;
 const store=createExplorationMapStore({bounds:map.bounds,ids:pois.points.map(p=>p.id),storage:{getItem:()=>null,setItem:(k,v)=>saved=v}});for(const p of pois.points){store.discover(p.id);store.reveal(p.position[0],p.position[2]);}store.flush();
 const server=await createServer({root,server:{host:'127.0.0.1',port:8109,strictPort:true,fs:{allow:[root]}}});await server.listen();
-const browser=await chromium.launch({args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']}),rows=[];
+const browser=await chromium.launch({executablePath:process.env.MICHI_CHROMIUM_EXECUTABLE||undefined,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']}),rows=[];
 try{for(const device of ['pc','mobile']){
  const context=await browser.newContext({viewport:device==='pc'?{width:1280,height:800}:{width:390,height:844},hasTouch:device==='mobile',isMobile:device==='mobile',deviceScaleFactor:1});
  await context.addInitScript(s=>localStorage.setItem('michi.explored.v1',s),saved);

@@ -1,37 +1,44 @@
-# MT-08A — 3D surface continuity
+# MT-08A — 3D roads and continuous water domains
 
-Status: BLOCKED on the remaining shoreline/terrain depth contract. This draft is not a release approval.
+Status: river follow-up implemented; final real-data regression/performance validation in progress. User visual acceptance is separate. Existing drafts PUBLIC #22 / PRIVATE #30 continue; no merge or deployment.
 
-Base: PUBLIC #20, `5ac0b9533ccd7731a7391cd5b1ac3b6c4833cf71`. Independent of MT-07F-0. No map, fog, markers, compass, HUD/menu, warp rules, save schema, DreamCore distribution, merge or deployment changes.
+## Source and responsibility
 
-## Changes
+Generic code/tests/build tools are PUBLIC. Real OSM/GSI snapshots, archived source features, prepared meshes, real captures and measurements stay PRIVATE. The original snapshots and existing coordinates are read only. MT-07F-0, the 2D map/fog, compass, HUD/menu, save schema, warp conditions and DreamCore #36 are unchanged.
 
-- Both road LODs clip ribbons to the actual triangular DEM faces. The old full-detail rectangular subdivision could cross under terrain between sampled corners. Ribbons are also clipped to tile bounds so an edge overhang cannot use a clamped local height over a rising neighbouring DEM. Avatar contact now samples the same surface; navigation/physics retain their original sampler.
-- An explicitly declared, validated optional source supplement adds only missing OSM ways. Original snapshots and existing way coordinates remain intact. The real supplement and its archived source evidence are PRIVATE.
-- Optional build-time water profiles fit the entire declared field once. Streamed tile acquisition/eviction can no longer refit a river's elevation. Only stream IDs present in a field receive these profiles; unrelated ponds cannot inherit a distant river height. Original water geometry, shader and depth policy are unchanged.
-- Declared data that cannot be loaded or validated fails closed, instead of silently restoring broken geometry. Undeclared optional data causes no fetch.
+## Repair
 
-## Reproducible checks
+Roads in both LODs clip to exact DEM faces and tile bounds; avatar visual feet use that same surface. Navigation retains the original DEM sampler.
 
-`npm test` (108 passing tests) and `npm run build`.
+Water now has one canonical full-field domain, compiled from the existing source water polygons and uncovered, non-tunnel waterways. Archived source ways restore tile-corner omissions. Geographical points use one declared projection origin; this corrects per-tile projection seams without relocating real features.
 
-All scripts accept external roots. Their outputs inherit the input's visibility. Never send real field outputs to PUBLIC CI or this repository.
+The existing DEM-fitted longitudinal profile is retained, with the smallest downward translation per connected water body required by every real bank DEM face break. Water must remain at least 0.18m below those modelled banks. This is a constrained game rendering model, not a claim of measured river levels. Unrelated ponds are separate bodies. No location-specific height exceptions or whole-terrain flattening are used.
 
-- `scripts/audit-3d-surfaces.mjs FIELD CODE OUTPUT`: all tiles, LOD triangle interiors, shared DEM edges, road/river topology and shoreline samples.
-- `scripts/generate-road-supplement.mjs FIELD SOURCE_JSON_GZ OUTPUT REPORT`: reclip archived source ways that explain unmatched seam endpoints; no online fetch or source overwrite.
-- `scripts/generate-water-profiles.mjs FIELD OUTPUT`: fixed full-field fit plus original snapshot SHA-256s.
-- `scripts/check-surface-regressions.mjs BEFORE AFTER OUTPUT`: original snapshot integrity, navigation, collisions, every bidirectional seam, landings, municipal vegetation and wildlife.
-- `scripts/create-surface-cases.mjs FIELD OUTPUT`, then `scripts/capture-3d-surfaces.mjs FIELD CASES OUTPUT_DIR`: production geometry/materials at fixed overview/walk/low oblique cameras, PC/mobile. Test-only camera instrumentation must have zero browser errors and reach the requested camera before capture.
-- `scripts/browser-surface-regressions.mjs FIELD OUTPUT_DIR`: actual runtime warp/movement/map checks.
-- `scripts/audit-water-mesh-seams.mjs FIELD OUTPUT`: actual float32 production water triangles intersected with shared tile planes; no footprint cap approximation.
-- `scripts/diagnose-water-profiles.mjs FIELD OUTPUT`: cache-composition sensitivity before the fixed fit.
+The original DEM triangles are retained outside source water. Within water, terrain is cut out and bank faces connect the original bank to below opaque water. Canonical water triangles are built once, refined conformingly, then clipped to tiles with all attributes interpolated from those same triangles. This removes both missing edge coverage and height T-junctions. The prepared water uses normal depth testing/writing; simply changing the old water material's depth flag was not sufficient.
 
-The existing public browser workflow runs only fictional data. Real inputs, full screenshots, comparisons, regression reports and performance samples are in the paired PRIVATE draft.
+Prepared water never refits or rebuilds when neighbouring tiles or LODs change. Collision coverage, source islands, vegetation exclusion and fauna contact use the same prepared authority. Existing animal candidate positions/behaviour are preserved. A world-anchored, locally advected procedural pattern avoids stripes caused by unrelated OSM station origins. No reflection passes or new texture assets.
 
-## Findings and limits
+## Build and verify
 
-The real-data audit reproduced full-detail road penetration (276 triangles in 16/25 tiles; zero after repair; the additional neighbour-overhang pass also ends at zero), source-way omissions at tile corners (12 source-backed missing segments restored), and cache-dependent water elevations (up to 1.18 m at the same location). Shared DEM boundaries were already continuous and are unchanged.
+Python build dependency: `shapely==2.1.2` (not shipped to the browser).
 
-Remaining HEIGHT/RENDER: a smooth DEM-fitted water surface can exceed parts of the mapped shoreline; the existing water material disables depth testing. Enabling depth testing alone hides source-mapped reaches below terrain, so it is not an accepted repair. Actual float32 water-triangle traces also retain missing boundary coverage and height steps; analytic profile equality alone is insufficient. A coupled, source-respecting bank/channel depth representation and mesh seam repair are still required. This draft does not lower all rivers, flatten terrain, move real coordinates, or claim the remaining issue is resolved.
+```
+python -m pip install --only-binary=:all: shapely==2.1.2
+python scripts/build-water-domain.py PRIVATE_ROOT NEW_MESH_DIR PRIVATE_REPORT --source ARCHIVED_SOURCE.json.gz
+```
 
-Numeric raster/shore samples, emulated Chromium/SwiftShader captures and synthetic input are evidence for their stated conditions; physical PC/mobile/gamepad and user visual acceptance remain unverified.
+Original source paths are protected against output overwrite. Prepared data records source snapshot hashes, and the report records archive/profile hashes. The private tile manifest declares a mesh path for every tile. Runtime loading validates indices, attributes, datums, bounds and coverage; missing declared data fails closed.
+
+```
+npm test
+python -m unittest discover -s tests -p 'test_water_domain.py'
+node scripts/verify-water-domain.mjs ASSEMBLED PRIVATE_REPORT
+node scripts/audit-water-mesh-seams.mjs ASSEMBLED PRIVATE_REPORT
+node scripts/check-surface-regressions.mjs BEFORE ASSEMBLED PRIVATE_REPORT
+```
+
+`verify-water-domain` samples actual indexed water triangles, compares Float32 bank contact with the original DEM, and verifies snapshot hashes. `audit-water-mesh-seams` intersects actual triangles with every shared tile plane; analytic profile equality is not substituted for rendered geometry. The Python fixture independently checks exact area, preserved land heights, source omissions, matching seams and source-file protection. PUBLIC CI only uses fictional data.
+
+Camera captures, runtime warp checks and the counterbalanced built-production benchmark remain available through `capture-3d-surfaces`, `browser-surface-regressions` and `benchmark-surface-release`. Optional `MICHI_CHROMIUM_EXECUTABLE` selects an installed test binary. Outputs always inherit the input visibility.
+
+At the first real-data verification: 25 tiles, bank clearance >=0.179997m, 40 seams with zero one-sided samples and maximum height difference 0.000000201m. 9,000 navigation steps, 42,025 collision samples, 40 bidirectional road boundaries and all 20 landings passed. Final images, browser checks, source preservation, performance and CI are recorded in the paired PRIVATE report; physical hardware and user visual acceptance are not implied by emulation.

@@ -3,18 +3,22 @@
 import fs from 'node:fs/promises';import path from 'node:path';import {pathToFileURL} from 'node:url';
 import {adjacentTilePairs} from '../lib/tiles.mjs';
 import {fitGlobalWaterProfiles,profilesInLocalSpace} from '../lib/tile-water.mjs';
+import {createSurfaceMeshLoader} from '../lib/surface-mesh.mjs';
 import {decodeWaterProfiles,profilesForWaterField} from '../lib/water-profile-data.mjs';
 const [rootArg,out]=process.argv.slice(2),root=path.resolve(rootArg);
 const {createWaterLayer}=await import(pathToFileURL(root+'/src/water.js'));
 const m=JSON.parse(await fs.readFile(root+'/public/data/tiles.json'));
 const snapshots=await Promise.all(m.tiles.map(async tile=>({tile,field:JSON.parse(await fs.readFile(root+'/public/'+tile.url))})));
+const loader=createSurfaceMeshLoader(m,'',async url=>({ok:true,json:async()=>JSON.parse(await fs.readFile(root+'/public/'+url))}));
+for(const s of snapshots)s.field=await loader.attach(s.field,s.tile);
 const fixed=m.waterProfiles?decodeWaterProfiles(JSON.parse(await fs.readFile(root+'/public/'+m.waterProfiles)),m):null;
 const all=fixed||fitGlobalWaterProfiles(snapshots,m),traces=new Map();
 for(const {tile,field} of snapshots){
  const layer=createWaterLayer(field,{detail:'full',sharedProfiles:profilesInLocalSpace(fixed?profilesForWaterField(all,field):all,tile)});
  const edges=[[],[],[],[]];
  for(const mesh of layer.group.children){const p=mesh.geometry.getAttribute('position');
-  for(let i=0;i<p.count;i+=3){const tri=[0,1,2].map(j=>[p.getX(i+j),p.getY(i+j)+field.terrain.min,p.getZ(i+j)]);
+  const ids=mesh.geometry.index?.array;const count=ids?.length||p.count;
+  for(let i=0;i<count;i+=3){const tri=[0,1,2].map(j=>{const k=ids?ids[i+j]:i+j;return [p.getX(k),p.getY(k)+field.terrain.min,p.getZ(k)];});
    for(let side=0;side<4;side++){
     const axis=side<2?0:2,other=axis===0?2:0,value=(side%2?1:-1)*m.size/2,points=[];
     if(Math.min(...tri.map(v=>v[axis]))>value+1e-5||Math.max(...tri.map(v=>v[axis]))<value-1e-5)continue;

@@ -10,7 +10,7 @@ for(const t of manifest.tiles){registerTile(world,t,JSON.parse(await fs.readFile
 const corridor=objects.find(p=>Array.from({length:81},(_,i)=>i*.5-20).every(d=>!collisionReason(world,p.x,p.z+d)));assert.ok(corridor);
 const pois=await read('pois.json'),map=await read('exploration-map.json');let saved;
 const store=createExplorationMapStore({bounds:map.bounds,ids:pois.points.map(p=>p.id),storage:{getItem:()=>null,setItem:(k,v)=>saved=v}});for(const p of pois.points){store.discover(p.id);store.reveal(p.position[0],p.position[2]);}store.flush();
-const browser=await chromium.launch({args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']}),rows=[];
+const browser=await chromium.launch({executablePath:process.env.MICHI_CHROMIUM_EXECUTABLE||undefined,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']}),rows=[];
 try{for(const c of cases){const server=await preview({root:path.resolve(c.root),preview:{host:'127.0.0.1',port:8110,strictPort:true}});
  try{
  const context=await browser.newContext({viewport:c.device==='pc'?{width:1280,height:800}:{width:390,height:844},isMobile:c.device==='mobile',hasTouch:c.device==='mobile',deviceScaleFactor:1});
