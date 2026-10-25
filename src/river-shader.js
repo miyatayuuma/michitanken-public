@@ -30,6 +30,7 @@ export const riverFragmentShader=`
 precision highp float;
 uniform float uTime;
 uniform float uMotion;
+uniform float uDomainFlow;
 varying vec3 vWorld;
 varying vec2 vFlow;
 varying float vStation;
@@ -52,10 +53,17 @@ float noise2(vec2 p){
 }
 void main(){
   // Distance measured in metres; station grows downstream.
-  float time=uTime*uMotion;
+  float elapsed=uTime*uMotion;
+  float time=elapsed*(1.0-uDomainFlow);
   float s=vStation;
   float side=vLateral;
   vec2 current=normalize(vFlow+vec2(0.0001));
+  // Different OSM ways have unrelated station origins. A prepared connected
+  // domain uses world-anchored, locally advected noise instead of interpolating
+  // those IDs into high-frequency stripes at a tributary or a tile boundary.
+  vec2 domain=vWorld.xz-current*elapsed*1.5;
+  s=mix(s,domain.x,uDomainFlow);
+  side=mix(side,domain.y,uDomainFlow);
   vec2 along=vec2(s*0.18-time*0.28,side*0.34);
   float low=noise2(along*0.85);
   float high=noise2(vec2(s*0.38-time*0.65,side*0.8)+vec2(13.2,8.6));

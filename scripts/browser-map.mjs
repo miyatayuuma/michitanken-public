@@ -9,6 +9,8 @@ try{for(const mobile of [false,true]){const context=await browser.newContext({vi
  const saved=await page.evaluate(()=>({records:window.__michiDebug.exploration().records,map:window.__michiDebug.map()}));
  // Settle asynchronous tile/vegetation work from the last visit before measuring map-only requests.
  await page.waitForLoadState('networkidle');
+ await page.waitForFunction(()=>window.__michiDebug.state().tiles.pending.length===0);
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  const beforeTiles=await page.evaluate(()=>window.__michiDebug.state().tiles.active);const beforeRequests=requests.length;await page.keyboard.press('m');await page.waitForSelector('#exploration-map:not([hidden])');await page.waitForTimeout(250);assert.deepEqual(await page.evaluate(()=>window.__michiDebug.state().tiles.active),beforeTiles);assert.equal(requests.slice(beforeRequests).some(r=>/\/data\/(tiles\/|field.json|vegetation\/|green-cover\/)/.test(r)),false);assert.equal(await page.evaluate(()=>window.__michiDebug.map().warpEnabled),false);await page.screenshot({path:path.join(out,(mobile?'mobile':'desktop')+'-map.png')});await page.keyboard.press('Escape');await page.waitForSelector('#exploration-map[hidden]',{state:'attached'});
  await page.reload();await page.waitForFunction(()=>document.querySelector('#scene')?.dataset.appReady==='true');assert.deepEqual(await page.evaluate(()=>window.__michiDebug.exploration().records),saved.records);const restored=await page.evaluate(()=>window.__michiDebug.map());assert.ok([...saved.map.cells].every((v,i)=>v==='0'||restored.cells[i]==='1'));
  // New A/X/B controls, no held-button repeats, no right-stick orbit on map.
