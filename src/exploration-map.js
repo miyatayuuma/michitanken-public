@@ -1,3 +1,4 @@
+import {createMapTerrain,DEFAULT_TERRAIN_STYLE} from './map-terrain.js';
 import {MAP_MARKER,nearestMapPoint} from '../lib/map-marker.mjs';
 import {canWarp} from '../lib/warp.mjs';
 import {createExplorationMapStore} from '../lib/exploration-map.mjs';
@@ -16,13 +17,8 @@ export async function createExplorationMap({container,registry,baseURL,onDiscove
  const card=document.createElement('div');card.className='map-card paper';card.hidden=true;card.append(label,confirm);confirm.className='primary';
  const zoomBar=document.createElement('div');zoomBar.className='map-zoom';const minus=iconButton('minus','地図を縮小','map-minus'),plus=iconButton('plus','地図を拡大','map-plus'),zoomLabel=document.createElement('output');zoomLabel.setAttribute('aria-label','地図の倍率');zoomBar.append(minus,zoomLabel,plus);panel.append(title,card,zoomBar);
  const view=createMapView();
- const ctx=canvas.getContext('2d'),base=document.createElement('canvas'),fog=document.createElement('canvas'),images={};base.width=base.height=1000;fog.width=store.cols;fog.height=store.rows;
- const g=base.getContext('2d');g.fillStyle='#eddfb7';g.fillRect(0,0,1000,1000);
- const project=p=>[(p[0]-b.minX)/(b.maxX-b.minX)*1000,(p[1]-b.minZ)/(b.maxZ-b.minZ)*1000];
- const ring=points=>{points.forEach((p,i)=>{const [x,y]=project(p);i?g.lineTo(x,y):g.moveTo(x,y);});g.closePath();};
- for(const a of data.areas){g.beginPath();ring(a.ring);for(const h of a.holes||[])ring(h);g.fillStyle={wood:'#a1b282',green:'#c2ce93',water:'#8ebfc3'}[a.kind];g.fill('evenodd');}
- for(const kind of ['river','road'])for(const l of data.lines.filter(l=>l.kind===kind)){g.beginPath();l.points.forEach((p,i)=>{const [x,y]=project(p);i?g.lineTo(x,y):g.moveTo(x,y);});g.lineWidth=Math.max(kind==='river'?2:1,(l.width||4)*1000/(b.maxX-b.minX));g.strokeStyle=kind==='river'?'#7bb2bd':'#faf2dc';g.lineCap='round';g.stroke();}
- for(const [k,url] of Object.entries(MAP_ICONS)){const im=new Image();im.src=url;images[k]=im;}
+ const ctx=canvas.getContext('2d'),params=new URLSearchParams(location.search);
+ const terrain=createMapTerrain(data,store,params.has('test')?params.get('terrain')||DEFAULT_TERRAIN_STYLE:DEFAULT_TERRAIN_STYLE);
  // The raster owns visual detail now. Retain only compact biome cells, not parsed map geometry.
  const mapBytes=JSON.stringify(data).length;data.lines.length=0;data.areas.length=0;
  let cursorVisible=false;let busy=false,open=false,px=0,pz=0,cursor={x:.5,y:.5},selected=null,changed=true,flushElapsed=0,closed=false,frame=0,drawMs=0,drawCount=0;
@@ -30,9 +26,8 @@ export async function createExplorationMap({container,registry,baseURL,onDiscove
  function layout(){w=panel.clientWidth;h=panel.clientHeight;const dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;canvas.style.width=w+'px';canvas.style.height=h+'px';ctx.setTransform(dpr,0,0,dpr,0,0);const header=Math.max(84,title.offsetTop+title.offsetHeight+12);side=Math.max(1,Math.min(w-28,h-header-106));left=(w-side)/2;top=header+(h-header-106-side)/2;view.layout(side,left,top);invalidate();}
  const inset=()=>Math.min(24,side*.2),fraction=()=>1-2*inset()/side;
  const position=p=>view.project(inset()/side+(p[0]-b.minX)/(b.maxX-b.minX)*fraction(),inset()/side+(p[2]-b.minZ)/(b.maxZ-b.minZ)*fraction());
- function fogUpdate(){const f=fog.getContext('2d');f.clearRect(0,0,store.cols,store.rows);f.fillStyle='#e5ebeb';for(let r=0;r<store.rows;r++)for(let c=0;c<store.cols;c++)if(!store.cells[r*store.cols+c])f.fillRect(c,r,1,1);changed=false;}
  function invalidate(){if(open&&!closed&&!frame)frame=requestAnimationFrame(draw);}
- function draw(){frame=0;if(!open||closed)return;drawCount++;const start=performance.now(),v=view.snapshot(),origin=view.project(inset()/side,inset()/side);ctx.clearRect(0,0,w,h);ctx.save();ctx.beginPath();ctx.rect(left,top,side,side);ctx.clip();ctx.drawImage(base,origin.x,origin.y,side*fraction()*v.zoom,side*fraction()*v.zoom);if(changed)fogUpdate();ctx.imageSmoothingEnabled=true;ctx.drawImage(fog,origin.x,origin.y,side*fraction()*v.zoom,side*fraction()*v.zoom);
+ function draw(){frame=0;if(!open||closed)return;drawCount++;const start=performance.now(),v=view.snapshot(),origin=view.project(inset()/side,inset()/side);ctx.clearRect(0,0,w,h);ctx.save();ctx.beginPath();ctx.rect(left,top,side,side);ctx.clip();if(changed){terrain.update();changed=false;}ctx.imageSmoothingEnabled=true;ctx.drawImage(terrain.canvas,origin.x,origin.y,side*fraction()*v.zoom,side*fraction()*v.zoom);
 
  for(const p of registry.points){if(!store.has(p.id))continue;const {x,y}=position(p.position);if(x<left||x>left+side||y<top||y>top+side)continue;const chosen=selected===p.id,available=canWarp(warps,store,p.id);
  ctx.fillStyle=available?'#245b4d':'#fff5df';ctx.strokeStyle=available?'#245b4d':'#71644e';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(x,y,MAP_MARKER.radius,0,Math.PI*2);ctx.fill();ctx.stroke();
@@ -70,5 +65,5 @@ export async function createExplorationMap({container,registry,baseURL,onDiscove
  update(x,z,dt,walking=true){if(closed)return;const moved=x!==px||z!==pz;px=x;pz=z;if(moved)invalidate();if(walking){changed=store.reveal(x,z)||changed;for(const p of registry.points)if(Math.hypot(p.position[0]-x,p.position[2]-z)<=75&&store.discover(p.id)){pulses.set(p.id,performance.now());onDiscover(p);}}if(changed)invalidate();flushElapsed+=dt;if(flushElapsed>1){store.flush();flushElapsed=0;}},
  isFound:id=>store.has(id),pulse:id=>{const t=pulses.get(id);if(t===undefined)return 0;const elapsed=performance.now()-t;if(elapsed>650){pulses.delete(id);return 0;}return 1-elapsed/650;},
  biomeAt(x,z){const v=data.biomes,c=Math.floor((x-b.minX)/v.step),r=Math.floor((z-b.minZ)/v.step);return ['urban','grassland','woodland','waterside'][c>=0&&c<v.cols&&r>=0&&r<v.rows?+v.cells[r*v.cols+c]:0];},
- snapshot:()=>({...store.snapshot(),open,selected,cursor:{...cursor},view:view.snapshot(),marker:MAP_MARKER,points:registry.points.filter(p=>store.has(p.id)).map(p=>({id:p.id,...position(p.position)})),drawMs,drawCount,canvasPixels:canvas.width*canvas.height,basePixels:1000000,mapBytes,warpEnabled:!!warps?.enabled,unlocked:registry.points.filter(p=>canWarp(warps,store,p.id)).map(p=>p.id),busy}),dispose(){closed=true;store.flush();cancelAnimationFrame(frame);observer.disconnect();panel.remove();base.width=base.height=fog.width=fog.height=0;}};
+ snapshot:()=>({...store.snapshot(),open,selected,cursor:{...cursor},view:view.snapshot(),marker:MAP_MARKER,points:registry.points.filter(p=>store.has(p.id)).map(p=>({id:p.id,...position(p.position)})),drawMs,drawCount,canvasPixels:canvas.width*canvas.height,basePixels:terrain.pixels,terrainStyle:terrain.style,terrainUpdates:terrain.updates,mapBytes,warpEnabled:!!warps?.enabled,unlocked:registry.points.filter(p=>canWarp(warps,store,p.id)).map(p=>p.id),busy}),dispose(){closed=true;store.flush();cancelAnimationFrame(frame);observer.disconnect();panel.remove();terrain.dispose();}};
 }
