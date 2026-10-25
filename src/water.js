@@ -78,8 +78,12 @@ function buildLineGeometry(field,line,profiles,detail='full'){
  * Water polygon is authoritative for channel width. A matching centreline
  * supplies flow coordinates but is NOT drawn again (prevents duplicate bands).
  */
-export function createWaterLayer(field,{flat=false,sharedProfiles=null,detail='full'}={}){
+export function createWaterLayer(field,{flat=false,sharedProfiles=null,detail='full',requirePrepared=false}={}){
  if(detail!=='full'&&detail!=='overview')throw Error('Invalid water LOD');
+ // A declared prepared domain must never silently use the legacy overlay.
+ // This contract also covers a field accidentally detached from its mesh
+ // during cache/LOD changes. Legacy fictional manifests remain supported.
+ if(requirePrepared&&!field.surface?.water)throw Error('Prepared water domain required');
  const group=new THREE.Group();group.name='mapped-water';
  const paths=buildFlowPaths(field.osm.waterways||[]);
  const profiles=sharedProfiles||fitWaterProfiles(paths,field.terrain);
@@ -92,7 +96,7 @@ export function createWaterLayer(field,{flat=false,sharedProfiles=null,detail='f
     depthTest:!!prepared,depthWrite:!!prepared,side:THREE.DoubleSide,transparent:false
   });
  const areas=field.osm.waterAreas||[];
- const summary={areas:0,ribbons:0,triangles:0,flowPaths:paths.length,limited:false,mode:flat?'flat':'procedural',detail,textureFree:SHADER_TEXTURE_FREE};
+ const summary={areas:0,ribbons:0,triangles:0,flowPaths:paths.length,limited:false,mode:flat?'flat':'procedural',detail,textureFree:SHADER_TEXTURE_FREE,source:prepared?'prepared-domain':'legacy-overlay'};
  const add=(result,label)=>{
   if(!result)return;
   const mesh=new THREE.Mesh(result.geometry,sharedMaterial);

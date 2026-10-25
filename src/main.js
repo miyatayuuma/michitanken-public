@@ -230,7 +230,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    if(visual.removed)return;
    if(visual.field.surface&&visual.water)return; // immutable prepared domain, independent of tile cache/LOD
    const next=createWaterLayer(visual.field,{
-     flat:flatWater,detail:visual.level,sharedProfiles:profilesInLocalSpace(fixedWaterProfiles?profilesForWaterField(profiles,visual.field):profiles,visual.entry)
+     flat:flatWater,detail:visual.level,requirePrepared:!!manifest.surfaceMeshes,sharedProfiles:profilesInLocalSpace(fixedWaterProfiles?profilesForWaterField(profiles,visual.field):profiles,visual.entry)
    });
    next.uniforms.uTime.value=elapsed;
    next.uniforms.uMotion.value=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches?0:1;
@@ -567,6 +567,8 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
      visualAudit:()=>({
        tiles:[...visuals].map(([id,visual])=>({
          id,
+         waterSource:visual.water?.summary.source||null,
+         waterDepth:visual.water?.group.children.map(m=>({test:m.material.depthTest,write:m.material.depthWrite,order:m.renderOrder}))||[],
          waterAreas:visual.water?.summary.areas||0,
          waterRibbons:visual.water?.summary.ribbons||0,
          waterTriangleCount:visual.water?.summary.triangles||0,

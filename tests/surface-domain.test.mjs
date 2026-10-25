@@ -12,9 +12,16 @@ test('source islands stay dry while circle contact at their banks remains blocke
  const data=sample();data.coverage[0].holes=[[[-2,-2],[2,-2],[2,2],[-2,2]]];const world=createCollisionWorld({...field(),surface:data});
  assert.equal(collisionReason(world,0,0),null);assert.equal(collisionReason(world,1.8,0),'water-area');assert.equal(collisionReason(world,4,0),'water-area');assert.equal(collisionReason(world,8,0),null);
 });
-test('prepared opaque water uses real depth and indexed normals, legacy water is unchanged',()=>{
+test('prepared opaque water uses real depth and indexed normals',()=>{
  const f={...field(),surface:sample()},layer=createWaterLayer(f);assert.equal(layer.summary.triangles,2);assert.equal(layer.summary.prepared,true);
  const mesh=layer.group.children[0];assert.equal(mesh.material.depthTest,true);assert.equal(mesh.material.depthWrite,true);assert.ok([...mesh.geometry.getAttribute('normal').array].every(Number.isFinite));mesh.geometry.dispose();mesh.material.dispose();
+});
+test('declared prepared domain cannot regress to legacy overlay after field detachment',()=>{
+ assert.throws(()=>createWaterLayer(field(),{requirePrepared:true}),/Prepared water domain required/);
+ const prepared=createWaterLayer({...field(),surface:sample()},{requirePrepared:true});
+ assert.equal(prepared.summary.source,'prepared-domain');
+ const legacy=createWaterLayer(field());assert.equal(legacy.summary.source,'legacy-overlay');
+ for(const layer of [prepared,legacy])layer.group.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
 });
 test('declared mesh loading deduplicates in flight, fails closed and leaves snapshots intact',async()=>{
  const m={tiles:[{id:'a'}],surfaceMeshes:{schema:1,tiles:{a:'data/surfaces/a.json'}}};let calls=0;
