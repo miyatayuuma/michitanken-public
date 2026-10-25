@@ -14,8 +14,8 @@ try{for(const device of ['pc','mobile']){
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(90000);
  await page.goto('http://127.0.0.1:8109/?test=1');await page.waitForFunction(()=>document.querySelector('#scene')?.dataset.appReady==='true');
  const start=await page.evaluate(()=>window.__michiDebug.state()),results=[];
- for(const p of warps.points){const result=await page.evaluate(id=>window.__michiDebug.warp(id),p.id);
-  assert.equal(result.ok,p.landing.confirmed);if(!result.ok)continue;
+ for(const p of warps.points){if(!await page.evaluate(()=>window.__michiDebug.map().open))await page.keyboard.press('m');const result=await page.evaluate(id=>window.__michiDebug.warp(id),p.id);
+  assert.equal(result.ok,p.landing.confirmed,JSON.stringify({device,id:p.id,result}));if(!result.ok){await page.keyboard.press('Escape');continue;}
   const s=await page.evaluate(()=>window.__michiDebug.state());assert.ok(Math.abs(s.x-p.landing.position[0])<.001&&Math.abs(s.z-p.landing.position[2])<.001);assert.ok(Number.isFinite(s.y));
   await page.keyboard.down('w');await page.waitForTimeout(150);await page.keyboard.up('w');
   const after=await page.evaluate(()=>window.__michiDebug.state());assert.ok([after.x,after.y,after.z].every(Number.isFinite));

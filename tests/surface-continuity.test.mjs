@@ -28,6 +28,16 @@ test('source supplement only adds absent ways and preserves original field objec
  for(const patch of [{points:[[NaN,0],[1,0]]},{points:[[-251,0],[1,0]]},{width:0},{bridge:'yes'}])assert.throws(()=>validateRoadSupplement({schema:1,tiles:{a:[{...road,...patch}]}},m));
  assert.throws(()=>validateRoadSupplement({schema:1,tiles:{unknown:[road]}},m));
 });
+test('production roads stop at shared tile edges instead of clamping heights into a neighbour',()=>{
+ const f=field();
+ for(const detail of ['full','overview']){
+  const verts=buildRoadRibbon([-250,-220],[250,220],8,f,.23,roadSurfaceOptions(detail));
+  assert.ok(verts.length>0);
+  for(let i=0;i<verts.length;i+=3){assert.ok(Math.abs(verts[i])<=250+1e-7);assert.ok(Math.abs(verts[i+2])<=250+1e-7);}
+  assert.ok(verts.some((v,i)=>i%3===0&&Math.abs(v-250)<1e-7));
+  assert.ok(verts.some((v,i)=>i%3===0&&Math.abs(v+250)<1e-7));
+ }
+});
 test('undeclared supplement makes no request; declared failures stop instead of silent loss',async()=>{
  let calls=0;assert.equal(await loadRoadSupplement({},'/',()=>{calls++;}),null);assert.equal(calls,0);
  await assert.rejects(loadRoadSupplement({roadSupplement:'../secret'},'/',()=>{}));
