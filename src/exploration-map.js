@@ -1,4 +1,4 @@
-import {createMapTerrain,DEFAULT_TERRAIN_STYLE} from './map-terrain.js';
+import {createMapTerrain} from './map-terrain.js';
 import {MAP_MARKER,nearestMapPoint} from '../lib/map-marker.mjs';
 import {canWarp} from '../lib/warp.mjs';
 import {createExplorationMapStore} from '../lib/exploration-map.mjs';
@@ -17,8 +17,8 @@ export async function createExplorationMap({container,registry,baseURL,onDiscove
  const card=document.createElement('div');card.className='map-card paper';card.hidden=true;card.append(label,confirm);confirm.className='primary';
  const zoomBar=document.createElement('div');zoomBar.className='map-zoom';const minus=iconButton('minus','地図を縮小','map-minus'),plus=iconButton('plus','地図を拡大','map-plus'),zoomLabel=document.createElement('output');zoomLabel.setAttribute('aria-label','地図の倍率');zoomBar.append(minus,zoomLabel,plus);panel.append(title,card,zoomBar);
  const view=createMapView();
- const ctx=canvas.getContext('2d'),params=new URLSearchParams(location.search);
- const terrain=createMapTerrain(data,store,params.has('test')?params.get('terrain')||DEFAULT_TERRAIN_STYLE:DEFAULT_TERRAIN_STYLE);
+ const ctx=canvas.getContext('2d');
+ const terrain=createMapTerrain(data,store);
  // The raster owns visual detail now. Retain only compact biome cells, not parsed map geometry.
  const mapBytes=JSON.stringify(data).length;data.lines.length=0;data.areas.length=0;
  let cursorVisible=false;let busy=false,open=false,px=0,pz=0,cursor={x:.5,y:.5},selected=null,changed=true,flushElapsed=0,closed=false,frame=0,drawMs=0,drawCount=0;
@@ -65,5 +65,5 @@ export async function createExplorationMap({container,registry,baseURL,onDiscove
  update(x,z,dt,walking=true){if(closed)return;const moved=x!==px||z!==pz;px=x;pz=z;if(moved)invalidate();if(walking){changed=store.reveal(x,z)||changed;for(const p of registry.points)if(Math.hypot(p.position[0]-x,p.position[2]-z)<=75&&store.discover(p.id)){pulses.set(p.id,performance.now());onDiscover(p);}}if(changed)invalidate();flushElapsed+=dt;if(flushElapsed>1){store.flush();flushElapsed=0;}},
  isFound:id=>store.has(id),pulse:id=>{const t=pulses.get(id);if(t===undefined)return 0;const elapsed=performance.now()-t;if(elapsed>650){pulses.delete(id);return 0;}return 1-elapsed/650;},
  biomeAt(x,z){const v=data.biomes,c=Math.floor((x-b.minX)/v.step),r=Math.floor((z-b.minZ)/v.step);return ['urban','grassland','woodland','waterside'][c>=0&&c<v.cols&&r>=0&&r<v.rows?+v.cells[r*v.cols+c]:0];},
- snapshot:()=>({...store.snapshot(),open,selected,cursor:{...cursor},view:view.snapshot(),marker:MAP_MARKER,points:registry.points.filter(p=>store.has(p.id)).map(p=>({id:p.id,...position(p.position)})),drawMs,drawCount,canvasPixels:canvas.width*canvas.height,basePixels:terrain.pixels,terrainStyle:terrain.style,terrainUpdates:terrain.updates,mapBytes,warpEnabled:!!warps?.enabled,unlocked:registry.points.filter(p=>canWarp(warps,store,p.id)).map(p=>p.id),busy}),dispose(){closed=true;store.flush();cancelAnimationFrame(frame);observer.disconnect();panel.remove();terrain.dispose();}};
+ snapshot:()=>({...store.snapshot(),open,selected,cursor:{...cursor},view:view.snapshot(),marker:MAP_MARKER,points:registry.points.filter(p=>store.has(p.id)).map(p=>({id:p.id,...position(p.position)})),drawMs,drawCount,canvasPixels:canvas.width*canvas.height,basePixels:terrain.pixels,terrainStyle:'A',terrainUpdates:terrain.updates,mapBytes,warpEnabled:!!warps?.enabled,unlocked:registry.points.filter(p=>canWarp(warps,store,p.id)).map(p=>p.id),busy}),dispose(){closed=true;store.flush();cancelAnimationFrame(frame);observer.disconnect();panel.remove();terrain.dispose();}};
 }

@@ -19,10 +19,10 @@ const saved={};for(const state of ['initial','partial','broad']){let value;const
 }
 const server=await createServer({root,server:{host:'127.0.0.1',port:8101,strictPort:true,fs:{allow:[root]}}});await server.listen();
 const browser=await chromium.launch({args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});const rows=[];
-try{for(const [device,width,height] of [['desktop',1280,800],['portrait',390,844],['landscape',844,390]])for(const state of ['initial','partial','broad'])for(const style of ['A','B','C']){
+try{for(const [device,width,height] of [['desktop',1280,800],['portrait',390,844],['landscape',844,390]])for(const state of ['initial','partial','broad'])for(const style of ['A']){
  const context=await browser.newContext({viewport:{width,height},hasTouch:device!=='desktop',isMobile:device!=='desktop',deviceScaleFactor:device==='portrait'?2:1});
  await context.addInitScript(v=>localStorage.setItem('michi.explored.v1',v),saved[state]);const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(60000);
- await page.goto('http://127.0.0.1:8101/?test=1&terrain='+style);await page.waitForFunction(()=>document.querySelector('#scene').dataset.appReady==='true');await page.keyboard.press('m');
+ await page.goto('http://127.0.0.1:8101/?test=1');await page.waitForFunction(()=>document.querySelector('#scene').dataset.appReady==='true');await page.keyboard.press('m');
  const get=()=>page.evaluate(()=>window.__michiDebug.map());const start=await get();assert.equal(start.terrainStyle,style);const player=await page.evaluate(()=>window.__michiDebug.state());
  for(const zoom of [1,2,4]){while((await get()).view.zoom<zoom)await page.locator('#map-plus').click();
   for(const [terrain,p] of Object.entries(centers)){const m=await get(),v=m.view,inset=Math.min(24,v.side*.2),fraction=1-2*inset/v.side;const q={x:v.left+v.side/2+(inset/v.side+(p[0]-b.minX)/(b.maxX-b.minX)*fraction-.5)*v.side*v.zoom+v.panX,y:v.top+v.side/2+(inset/v.side+(p[1]-b.minZ)/(b.maxZ-b.minZ)*fraction-.5)*v.side*v.zoom+v.panY};
@@ -33,5 +33,5 @@ try{for(const [device,width,height] of [['desktop',1280,800],['portrait',390,844
    rows.push({style,device,state,zoom,terrain,file,explored:after.cells.split('1').length-1,total:after.cells.length,found:after.found.length,unlocked:after.unlocked.length,idleRedraws:after.drawCount-before.drawCount,view:after.view,drawMs:after.drawMs,currentPositionInView:(()=>{const x=v.left+v.side/2+(inset/v.side+(player.x-b.minX)/(b.maxX-b.minX)*fraction-.5)*v.side*v.zoom+after.view.panX,y=v.top+v.side/2+(inset/v.side+(player.z-b.minZ)/(b.maxZ-b.minZ)*fraction-.5)*v.side*v.zoom+after.view.panY;return x>=v.left&&x<=v.left+v.side&&y>=v.top&&y<=v.top+v.side;})()});
   }
  }assert.deepEqual(errors,[]);await context.close();console.log(device,state,style,'9 screenshots PASS');await fs.writeFile(out+'/matrix.json',JSON.stringify({status:'IN_PROGRESS',centers,rows},null,2));
-}assert.equal(rows.length,243);await fs.writeFile(out+'/matrix.json',JSON.stringify({status:'PASS',protocol:'27 state/zoom/device combinations per style; all three terrain centers within each =81 captures per style. Browser screenshots, seeded map fixtures, no physical device acceptance.',centers,rows},null,2));
+}assert.equal(rows.length,81);await fs.writeFile(out+'/matrix.json',JSON.stringify({status:'PASS',protocol:'Approved A only: 27 state/zoom/device combinations; all three terrain centers within each =81 captures. Browser screenshots, seeded map fixtures, no physical device acceptance.',centers,rows},null,2));
 }finally{await browser.close();await server.close();}
