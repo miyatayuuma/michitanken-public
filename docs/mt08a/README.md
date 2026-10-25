@@ -23,6 +23,7 @@ All scripts accept external roots. Their outputs inherit the input's visibility.
 - `scripts/check-surface-regressions.mjs BEFORE AFTER OUTPUT`: original snapshot integrity, navigation, collisions, every bidirectional seam, landings, municipal vegetation and wildlife.
 - `scripts/create-surface-cases.mjs FIELD OUTPUT`, then `scripts/capture-3d-surfaces.mjs FIELD CASES OUTPUT_DIR`: production geometry/materials at fixed overview/walk/low oblique cameras, PC/mobile. Test-only camera instrumentation must have zero browser errors and reach the requested camera before capture.
 - `scripts/browser-surface-regressions.mjs FIELD OUTPUT_DIR`: actual runtime warp/movement/map checks.
+- `scripts/audit-water-mesh-seams.mjs FIELD OUTPUT`: actual float32 production water triangles intersected with shared tile planes; no footprint cap approximation.
 - `scripts/diagnose-water-profiles.mjs FIELD OUTPUT`: cache-composition sensitivity before the fixed fit.
 
 The existing public browser workflow runs only fictional data. Real inputs, full screenshots, comparisons, regression reports and performance samples are in the paired PRIVATE draft.
@@ -31,6 +32,6 @@ The existing public browser workflow runs only fictional data. Real inputs, full
 
 The real-data audit reproduced full-detail road penetration (276 triangles in 16/25 tiles; zero after repair; the additional neighbour-overhang pass also ends at zero), source-way omissions at tile corners (12 source-backed missing segments restored), and cache-dependent water elevations (up to 1.18 m at the same location). Shared DEM boundaries were already continuous and are unchanged.
 
-Remaining HEIGHT/RENDER: a smooth DEM-fitted water surface can exceed parts of the mapped shoreline; the existing water material disables depth testing. Enabling depth testing alone hides source-mapped reaches below terrain, so it is not an accepted repair. A coupled, source-respecting bank/channel depth representation is still required. This draft does not lower all rivers, flatten terrain, move real coordinates, or claim the remaining issue is resolved.
+Remaining HEIGHT/RENDER: a smooth DEM-fitted water surface can exceed parts of the mapped shoreline; the existing water material disables depth testing. Enabling depth testing alone hides source-mapped reaches below terrain, so it is not an accepted repair. Actual float32 water-triangle traces also retain missing boundary coverage and height steps; analytic profile equality alone is insufficient. A coupled, source-respecting bank/channel depth representation and mesh seam repair are still required. This draft does not lower all rivers, flatten terrain, move real coordinates, or claim the remaining issue is resolved.
 
 Numeric raster/shore samples, emulated Chromium/SwiftShader captures and synthetic input are evidence for their stated conditions; physical PC/mobile/gamepad and user visual acceptance remain unverified.
