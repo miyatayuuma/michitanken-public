@@ -135,8 +135,9 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  container.dataset.renderPixelRatio=String(renderer.getPixelRatio());
  renderer.outputColorSpace=THREE.SRGBColorSpace;
  container.appendChild(renderer.domElement);
- scene.add(new THREE.HemisphereLight(0xf5faff,0x83917b,2.1));
+ const hemi=new THREE.HemisphereLight(0xf5faff,0x83917b,2.1);scene.add(hemi);
  const sun=new THREE.DirectionalLight(0xffffff,2);sun.position.set(-180,320,120);scene.add(sun);
+ const buildingLighting={sky:hemi.color.clone().multiplyScalar(hemi.intensity).toArray(),ground:hemi.groundColor.clone().multiplyScalar(hemi.intensity).toArray(),sun:sun.color.clone().multiplyScalar(sun.intensity).toArray(),direction:sun.position.clone().normalize().toArray()};
  const world=createTiledWorld(manifest);
  let biomeDebug=null;
  let poiRegistry=null,poiMarkers=null;
@@ -270,13 +271,14 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
        addRoads(visual.field,temp,next,target);
        await nextFrame();
        if(visual.removed){disposeObject(temp);break;}
-       addBuildings(visual.field,temp,next,target,visual.entry,colorsEnabled);
+       // Buildings keep exact footprints and static lighting across road LOD changes.
+       next.buildings=visual.layers.buildings;
        await nextFrame();
        if(visual.removed||visual.requestedLevel!==target){
          disposeObject(temp);continue;
        }
        visual.root.remove(visual.layers.roads,visual.layers.buildings);
-       disposeObject(visual.layers.roads);disposeObject(visual.layers.buildings);
+       disposeObject(visual.layers.roads);
        visual.layers.roads=next.roads;visual.layers.buildings=next.buildings;
        visual.root.add(next.roads,next.buildings);
        visual.level=target;
@@ -329,7 +331,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    await nextFrame();
    addRoads(field,root,layers,level);
    await nextFrame();
-   addBuildings(field,root,layers,level,entry,colorsEnabled);
+   addBuildings(field,root,layers,level,entry,colorsEnabled,buildingLighting);
    await nextFrame();
    addCrossingMarkers(field,root,layers);
    layers.outline=addTileBorder(field,root,entry);
@@ -555,7 +557,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
        natureInstances:Number(container.dataset.natureInstances||0),
        wildlifeVisible:wildlife?.visibleCount||0,
        wildlifeCandidates:wildlife?.candidateCount||0,
-       levels:[...visuals.values()].map(v=>({id:v.entry.id,level:v.level,visible:v.root.visible}))
+       levels:[...visuals.values()].map(v=>({id:v.entry.id,level:v.level,visible:v.root.visible,buildingGeometry:v.layers.buildings.children.map(m=>m.geometry.uuid)}))
      }),
      map:()=>map2d?.snapshot(),
      warp:id=>warpController.warp(id),

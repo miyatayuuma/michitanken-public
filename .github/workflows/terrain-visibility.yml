@@ -2,6 +2,9 @@ name: Public approved terrain acceptance
 on:
   pull_request:
     paths:
+      - 'src/main.js'
+      - 'src/buildings.js'
+      - 'lib/render-policy.mjs'
       - 'src/map-terrain.js'
       - 'src/exploration-map.js'
       - 'scripts/browser-approved-terrain*.mjs'
