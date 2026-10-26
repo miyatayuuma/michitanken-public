@@ -16,13 +16,18 @@ export function addBuildings(field,parent,layerSet,detail='full',entry={offset:[
   const color=buildingColors(b,entry,colorsEnabled),wallStart=walls.length,roofStart=roofs.length;
   const base=p.reduce((sum,[x,z])=>sum+localY(field,x,z),0)/p.length,bottom=base+.15,top=base+b.height;
   if(detail==='overview'){
-   // Tiny distant buildings need roofs, not hundreds of unseen wall triangles.
+   // A distant building remains a closed silhouette: two roof and eight wall triangles,
+   // batched per tile rather than one draw call per building.
    const xs=p.map(v=>v[0]),zs=p.map(v=>v[1]);
    const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
    if(maxX-minX<.05||maxZ-minZ<.05)continue;
    roofs.push(minX,top,minZ,maxX,top,minZ,minX,top,maxZ,
      maxX,top,minZ,maxX,top,maxZ,minX,top,maxZ);
-   if(colorsEnabled)appendColor(roofColors,(roofs.length-roofStart)/3,color.roof);
+   const box=[[minX,minZ],[maxX,minZ],[maxX,maxZ],[minX,maxZ]];
+   for(let i=0;i<4;i++){const a=box[i],c=box[(i+1)%4];walls.push(
+    a[0],bottom,a[1],c[0],bottom,c[1],a[0],top,a[1],
+    c[0],bottom,c[1],c[0],top,c[1],a[0],top,a[1]);}
+   if(colorsEnabled){appendColor(wallColors,(walls.length-wallStart)/3,color.wall);appendColor(roofColors,(roofs.length-roofStart)/3,color.roof);}
    continue;
   }
   const shape=new THREE.Shape();shape.moveTo(p[0][0],-p[0][1]);for(let i=1;i<p.length;i++)shape.lineTo(p[i][0],-p[i][1]);shape.closePath();

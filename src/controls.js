@@ -8,12 +8,12 @@ const keyFor=e=>e.key.toLowerCase();
  * Return intention only; the deterministic movement system owns position and collision.
  * Mobile: left thumb for movement, drag on canvas for looking, right thumb to run.
  */
-export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,onModeToggle=()=>{},onInteract=()=>{},onBack=()=>{},onCharacter=()=>{},onMapControl=()=>{},onMapZoom=()=>{},onMenu=()=>{},onMenuMove=()=>{},onMenuAdjust=()=>{},onActivity=()=>{},isActive=()=>true}){
+export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,onModeToggle=()=>{},onInteract=()=>{},onTap=()=>{},onBack=()=>{},onCharacter=()=>{},onMapControl=()=>{},onMapZoom=()=>{},onMenu=()=>{},onMenuMove=()=>{},onMenuAdjust=()=>{},onActivity=()=>{},isActive=()=>true}){
   const abort=new AbortController(),{signal}=abort;
   const keys=new Set(),pressed=new Map();let inputMode='walk';const modeForKeys=()=>inputMode;
   let joyId=null,runId=null,runHeld=false,joyX=0,joyY=0;
   const lookPointers=new Map();
-  let pinchDistance=null;
+  let pinchDistance=null,tap=null;
   const listen=(target,type,handler,options={})=>target.addEventListener(type,handler,{...options,signal});
   let menuDirection=0;let padSignature='',padArmed=false,padButtons=[],padX=0,padY=0,padRun=false,padActive=false;
   const cursorMode=()=> 'off',captureA=()=>true;
@@ -96,7 +96,7 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
   });
   listen(window,'keyup',e=>{keys.delete(keyFor(e));});
   function resetInput(){
-    keys.clear();pressed.clear();lookPointers.clear();pinchDistance=null;
+    keys.clear();pressed.clear();lookPointers.clear();pinchDistance=null;tap=null;
     joyId=null;runId=null;runHeld=false;joyX=joyY=0;
     knob.style.transform='translate(0px, 0px)';runButton.classList.remove('holding');
   }
@@ -132,11 +132,13 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
   listen(canvas,'pointerdown',e=>{
     if(!isActive()||(e.pointerType==='mouse'&&e.button!==0))return;
     onActivity(e.pointerType==='touch'?'touch':'mouse');lookPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    if(lookPointers.size>=2)pinchDistance=distanceOfTwo();
+    if(lookPointers.size===1)tap={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now()};
+    else{tap=null;pinchDistance=distanceOfTwo();}
     canvas.setPointerCapture(e.pointerId);e.preventDefault();
   });
   listen(canvas,'pointermove',e=>{
     if(!isActive()||!lookPointers.has(e.pointerId))return;
+    if(tap&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)>8)tap=null;
     const old=lookPointers.get(e.pointerId),dx=e.clientX-old.x,dy=e.clientY-old.y;
     lookPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(lookPointers.size===1){onLook(-dx*0.006,-dy*0.0045);}
@@ -147,7 +149,10 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,on
     e.preventDefault();
   });
   const stopLook=e=>{
-    lookPointers.delete(e.pointerId);pinchDistance=lookPointers.size>=2?distanceOfTwo():null;
+    const accept=e.type==='pointerup'&&lookPointers.has(e.pointerId)&&tap?.id===e.pointerId&&
+      lookPointers.size===1&&performance.now()-tap.time<=500&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<=8&&isActive();
+    tap=null;lookPointers.delete(e.pointerId);pinchDistance=lookPointers.size>=2?distanceOfTwo():null;
+    if(accept)onTap(e.clientX,e.clientY,canvas.getBoundingClientRect());
   };
   listen(canvas,'pointerup',stopLook);listen(canvas,'pointercancel',stopLook);listen(canvas,'lostpointercapture',stopLook);
   listen(canvas,'wheel',e=>{if(!isActive())return;onZoom(Math.exp(e.deltaY*0.001));e.preventDefault();},{passive:false});

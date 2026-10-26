@@ -18,7 +18,7 @@ test('building palettes are stable across reconstruction, clipping IDs and coord
 test('full and overview reuse roof colours without changing geometry or batch counts',()=>{
  for(const detail of ['full','overview']){
   const before=build(detail,false),after=build(detail,true),reload=build(detail,true);
-  assert.equal(after.children.length,detail==='full'?2:1);
+  assert.equal(after.children.length,2);
   after.children.forEach((mesh,i)=>{
    assert.deepEqual(mesh.geometry.attributes.position.array,before.children[i].geometry.attributes.position.array);
    assert.deepEqual(mesh.geometry.attributes.normal.array,before.children[i].geometry.attributes.normal.array);
@@ -55,5 +55,18 @@ test('instanced nature tint preserves authored colours, geometry and matrices; t
   assert.equal(on.children.length,off.children.length);let tinted=0;
   on.children.forEach((m,i)=>{const b=off.children[i];assert.deepEqual(m.instanceMatrix.array,b.instanceMatrix.array);assert.deepEqual(m.geometry.attributes.position.array,b.geometry.attributes.position.array);assert.equal(m.material.color.getHex(),b.material.color.getHex());assert.equal(m.count,b.count);if(m.instanceColor)tinted++;});
   assert.equal(tinted>0,!textured);renderer.dispose();
+ }
+});
+
+test('overview buildings have roof plus eight wall triangles, stable height/colour, two tile batches',()=>{
+ const g=build('overview',true),[walls,roofs]=g.children;
+ assert.equal(g.children.length,2);
+ assert.equal(walls.geometry.attributes.position.count,64*8*3);
+ assert.equal(roofs.geometry.attributes.position.count,64*2*3);
+ for(let i=0;i<buildings.length;i++){
+  const p=walls.geometry.attributes.position,c=walls.geometry.attributes.color,b=buildings[i];
+  const ys=Array.from({length:24},(_,j)=>p.getY(i*24+j));
+  assert.ok(Math.abs(Math.min(...ys)-.15)<1e-6);assert.equal(Math.max(...ys),b.height);
+  const color=new THREE.Color(buildingColors(b).wall);assert.ok(Math.abs(c.getX(i*24)-color.r)<1e-6);
  }
 });

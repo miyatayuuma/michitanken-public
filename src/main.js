@@ -399,6 +399,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    onLook(dx,dy){if(mode!=='walk'||warpController?.busy)return;cameraYaw+=dx;cameraPitch=Math.min(1.1,Math.max(.2,cameraPitch+dy));},
    onZoom(ratio){if(mode!=='walk'||warpController?.busy)return;cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));},
    onModeToggle(){if(notebook.opened){notebook.close();return;}changeMode(mode==='walk'?'map':'walk');},
+   onTap(x,y,rect){if(mode==='walk'&&!warpController?.busy&&!notebook.opened)exploration?.collectAt(x,y,rect);},
    onInteract(){if(notebook.opened){notebook.activate();return;}sound.activate();if(warpController?.busy)return;if(mode==='map')map2d?.select();else exploration?.collect();},
    onBack(){if(notebook.opened){notebook.close();gameInput.reset();return;}if(warpController?.busy){warpController.cancel();return;}if(mode==='map'&&!map2d?.cancel())changeMode('walk');},
    onCharacter(id){switchCharacter(id);},
