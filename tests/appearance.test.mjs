@@ -18,7 +18,7 @@ test('building palettes are stable across reconstruction, clipping IDs and coord
 test('full and overview reuse roof colours without changing geometry or batch counts',()=>{
  for(const detail of ['full','overview']){
   const before=build(detail,false),after=build(detail,true),reload=build(detail,true);
-  assert.equal(after.children.length,2);
+  assert.equal(after.children.length,detail==='full'?2:1);
   after.children.forEach((mesh,i)=>{
    assert.deepEqual(mesh.geometry.attributes.position.array,before.children[i].geometry.attributes.position.array);
    assert.deepEqual(mesh.geometry.attributes.normal.array,before.children[i].geometry.attributes.normal.array);
@@ -26,12 +26,12 @@ test('full and overview reuse roof colours without changing geometry or batch co
    assert.deepEqual(mesh.geometry.attributes.color.array,reload.children[i].geometry.attributes.color.array);
    assert.equal(mesh.material.vertexColors,true);
   });
-  const roofs=after.children.at(-1).geometry.attributes.color;
+  const roofs=after.children.at(-1).geometry.attributes.color,roofOffset=detail==='overview'?buildings.length*24:0;
   buildings.forEach((b,i)=>{
    const c=new THREE.Color(buildingColors(b).roof);
-   assert.ok(Math.abs(roofs.getX(i*6)-c.r)<1e-6);
-   assert.ok(Math.abs(roofs.getY(i*6)-c.g)<1e-6);
-   assert.ok(Math.abs(roofs.getZ(i*6)-c.b)<1e-6);
+   assert.ok(Math.abs(roofs.getX(roofOffset+i*6)-c.r)<1e-6);
+   assert.ok(Math.abs(roofs.getY(roofOffset+i*6)-c.g)<1e-6);
+   assert.ok(Math.abs(roofs.getZ(roofOffset+i*6)-c.b)<1e-6);
   });
  }
 });
@@ -58,15 +58,28 @@ test('instanced nature tint preserves authored colours, geometry and matrices; t
  }
 });
 
-test('overview buildings have roof plus eight wall triangles, stable height/colour, two tile batches',()=>{
- const g=build('overview',true),[walls,roofs]=g.children;
- assert.equal(g.children.length,2);
- assert.equal(walls.geometry.attributes.position.count,64*8*3);
- assert.equal(roofs.geometry.attributes.position.count,64*2*3);
+test('overview buildings use one outward-facing batch with roof and walls, stable height/colour',()=>{
+ const g=build('overview',true),mesh=g.children[0];assert.equal(g.children.length,1);assert.equal(mesh.material.side,THREE.FrontSide);
+ assert.equal(mesh.geometry.attributes.position.count,64*10*3);
+ const p=mesh.geometry.attributes.position,c=mesh.geometry.attributes.color,n=mesh.geometry.attributes.normal;
  for(let i=0;i<buildings.length;i++){
-  const p=walls.geometry.attributes.position,c=walls.geometry.attributes.color,b=buildings[i];
-  const ys=Array.from({length:24},(_,j)=>p.getY(i*24+j));
+  const b=buildings[i],ys=Array.from({length:24},(_,j)=>p.getY(i*24+j));
   assert.ok(Math.abs(Math.min(...ys)-.15)<1e-6);assert.equal(Math.max(...ys),b.height);
   const color=new THREE.Color(buildingColors(b).wall);assert.ok(Math.abs(c.getX(i*24)-color.r)<1e-6);
+  assert.equal(n.getZ(i*24),-1);assert.equal(n.getY(64*24+i*6),1);
+ }
+});
+
+test('overview ray acceleration matches actual triangles, including transforms, occlusion range and missed roofs',()=>{
+ const group=build('overview',true),mesh=group.children[0];group.position.set(120,7,-80);group.updateMatrixWorld(true);
+ const accelerated=mesh.raycast;let seed=710;
+ const random=()=>((seed=(seed*1664525+1013904223)>>>0)/2**32);
+ for(let i=0;i<240;i++){
+  const origin=new THREE.Vector3(120+random()*200,7+random()*30,-80+(random()-.5)*40);
+  const target=new THREE.Vector3(120+random()*200,7+random()*10,-80+random()*2);
+  const ray=new THREE.Raycaster(origin,target.sub(origin).normalize(),0,i%3?200:3),a=[],b=[];
+  accelerated.call(mesh,ray,a);THREE.Mesh.prototype.raycast.call(mesh,ray,b);
+  const sorted=v=>v.map(h=>h.distance).sort((a,b)=>a-b);
+  assert.deepEqual(sorted(a),sorted(b));assert.equal(mesh.geometry.drawRange.start,0);assert.equal(mesh.geometry.drawRange.count,Infinity);
  }
 });
