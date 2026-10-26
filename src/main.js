@@ -10,7 +10,10 @@ import {loadPoiRegistry,createPoiMarkers} from './poi-markers.js';
 import {addBuildings} from './buildings.js';
 import * as THREE from 'three';
 import {gridSample} from '../lib/geo.mjs';
-import {buildRoadRibbon} from '../lib/road-surface.mjs';
+import {buildRoadRibbon,roadSurfaceOptions} from '../lib/road-surface.mjs';
+import {loadWaterProfiles,profilesForWaterField} from '../lib/water-profile-data.mjs';
+import {createSurfaceMeshLoader} from '../lib/surface-mesh.mjs';
+import {loadRoadSupplement,applyRoadSupplement} from '../lib/road-supplement.mjs';
 import {validateField} from '../lib/field.mjs';
 import {createCollisionWorld,chooseSpawn,advancePlayer,terrainHeight,blocked,collisionReason} from '../lib/navigation.mjs';
 import {createGameInput} from './controls.js';
@@ -18,7 +21,7 @@ import {createWaterLayer} from './water.js';
 import {validateManifest,createTiledWorld,registerTile,removeTile,tileAtPosition,distanceFromRect,PRELOAD_DISTANCE} from '../lib/tiles.mjs';
 import {createTileStreamer} from './tile-stream.js';
 import {fitGlobalWaterProfiles,profilesInLocalSpace} from '../lib/tile-water.mjs';
-import {pixelRatioBudget,tileDetail,geometryStats,OVERVIEW_ROAD_STEP,FULL_ROAD_STEP} from '../lib/render-policy.mjs';
+import {pixelRatioBudget,tileDetail,geometryStats} from '../lib/render-policy.mjs';
 import {createVegetationRenderer,natureInstanceBudget} from './vegetation.js';
 import {createWildlifeRenderer} from './wildlife.js';
 import {createExploration} from './exploration.js';
@@ -33,6 +36,11 @@ function geometryFromTriangles(triangles){
  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(triangles,3));g.computeVertexNormals();return g;
 }
 function addTerrain(field,parent){
+ if(field.surface?.terrain){
+  const data=field.surface.terrain,g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(data.positions,3));g.setIndex(data.indices);g.computeVertexNormals();
+  parent.add(new THREE.Mesh(g,new THREE.MeshLambertMaterial({color:0x7da88a,side:THREE.DoubleSide})));return;
+ }
  const {terrain}=field,{count,size,elevations}=terrain,vertices=[],uv=[],index=[];
  for(let z=0;z<count;z++)for(let x=0;x<count;x++){
   vertices.push(-size/2+x*size/(count-1),elevations[z*count+x]-terrain.min,-size/2+z*size/(count-1));uv.push(x/(count-1),z/(count-1));
@@ -88,13 +96,12 @@ function addTileBorder(field,parent,entry){
 }
 function addRoads(field,parent,layerSet,detail='full'){
  const group=new THREE.Group();group.name='roads';const batches={road:[],path:[],railway:[],bridge:[]};
- const step=detail==='overview'?OVERVIEW_ROAD_STEP:FULL_ROAD_STEP;
  for(const road of field.osm.roads){
   const kind=road.bridge?'bridge':['footway','path','steps','pedestrian','cycleway'].includes(road.kind)?'path':'road';
-  for(let i=1;i<road.points.length;i++)batches[kind].push(...buildRoadRibbon(road.points[i-1],road.points[i],road.width,field,road.bridge ? .40 : .23,{alongStep:step,acrossStep:detail==='overview'?8:2.4,terrainSafe:detail==='overview'}));
+  for(let i=1;i<road.points.length;i++)batches[kind].push(...buildRoadRibbon(road.points[i-1],road.points[i],road.width,field,road.bridge ? .40 : .23,roadSurfaceOptions(detail)));
  }
  for(const railway of field.osm.railways||[])if(!railway.tunnel)for(let i=1;i<railway.points.length;i++)
-  batches.railway.push(...buildRoadRibbon(railway.points[i-1],railway.points[i],railway.width||2.5,field,railway.bridge?2.8:.31,{alongStep:step,acrossStep:detail==='overview'?8:2.4,terrainSafe:detail==='overview'}));
+  batches.railway.push(...buildRoadRibbon(railway.points[i-1],railway.points[i],railway.width||2.5,field,railway.bridge?2.8:.31,roadSurfaceOptions(detail)));
  for(const [type,verts] of Object.entries(batches)){
   if(!verts.length)continue;
   const colors={road:0xded8c5,path:0xedbb7a,railway:0x5e6b6e,bridge:0xeab878};
@@ -116,7 +123,7 @@ function makeAvatar(){
  group.userData.type='player';
  return group;
 }
-async function init(north,manifest){
+async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,surfaceMeshes=null){
  validateManifest(manifest);
  container.dataset.appReady='false';
  scene=new THREE.Scene();scene.background=new THREE.Color(0xb7d7d9);scene.fog=new THREE.Fog(0xb7d7d9,500,1150);
@@ -215,13 +222,15 @@ async function init(north,manifest){
    },0));
  }
  function currentWaterProfiles(){
+   if(fixedWaterProfiles)return fixedWaterProfiles;
    if(!streamer)return [];
    return fitGlobalWaterProfiles(streamer.getCached(),manifest);
  }
  function rebuildWater(visual,profiles=currentWaterProfiles()){
    if(visual.removed)return;
+   if(visual.field.surface&&visual.water)return; // immutable prepared domain, independent of tile cache/LOD
    const next=createWaterLayer(visual.field,{
-     flat:flatWater,detail:visual.level,sharedProfiles:profilesInLocalSpace(profiles,visual.entry)
+     flat:flatWater,detail:visual.level,requirePrepared:!!manifest.surfaceMeshes,sharedProfiles:profilesInLocalSpace(fixedWaterProfiles?profilesForWaterField(profiles,visual.field):profiles,visual.entry)
    });
    next.uniforms.uTime.value=elapsed;
    next.uniforms.uMotion.value=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches?0:1;
@@ -334,8 +343,9 @@ async function init(north,manifest){
    scene.add(root);
    const maxHeight=Math.max(40,...field.osm.buildings.map(b=>b.height));
    const h=manifest.size/2;
+   const surfaceMin=field.surface?.terrain?.positions.reduce((n,v,i)=>i%3===1?Math.min(n,v):n,Infinity)??Infinity;
    const bounds=new THREE.Box3(
-     new THREE.Vector3(entry.offset[0]-h,field.terrain.min-world.baseElevation-3,entry.offset[1]-h),
+     new THREE.Vector3(entry.offset[0]-h,field.terrain.min-world.baseElevation+Math.min(-3,surfaceMin-1),entry.offset[1]-h),
      new THREE.Vector3(entry.offset[0]+h,field.terrain.max-world.baseElevation+maxHeight+3,entry.offset[1]+h)
    );
    const visual={entry,field,root,layers,level,requestedLevel:level,bounds,
@@ -364,7 +374,7 @@ async function init(north,manifest){
      if(entry.id==='north')return north;
      const response=await fetch(`${import.meta.env.BASE_URL}${entry.url}`,{cache:'no-store'});
      if(!response.ok)throw Error(`タイル ${entry.id} の取得に失敗 (HTTP ${response.status})`);
-     const field=await response.json();validateField(field);return field;
+     const field=await response.json();validateField(field);return surfaceMeshes.attach(applyRoadSupplement(field,entry,roadSupplement),entry);
    },
    mount,unmount,onChange:reportStreaming
  });
@@ -407,7 +417,7 @@ async function init(north,manifest){
      if(tile){
        if(!footCache||footCache.field!==tile.field||footCache.x!==playerState.x||footCache.z!==playerState.z)
          footCache={field:tile.field,x:playerState.x,z:playerState.z,
-           y:renderedFootHeight(tile.field,playerState.x-owner.offset[0],playerState.z-owner.offset[1],world.baseElevation,{roadStep:FULL_ROAD_STEP})};
+           y:renderedFootHeight(tile.field,playerState.x-owner.offset[0],playerState.z-owner.offset[1],world.baseElevation)};
        y=footCache.y;
      }
    }
@@ -557,6 +567,8 @@ async function init(north,manifest){
      visualAudit:()=>({
        tiles:[...visuals].map(([id,visual])=>({
          id,
+         waterSource:visual.water?.summary.source||null,
+         waterDepth:visual.water?.group.children.map(m=>({test:m.material.depthTest,write:m.material.depthWrite,order:m.renderOrder}))||[],
          waterAreas:visual.water?.summary.areas||0,
          waterRibbons:visual.water?.summary.ribbons||0,
          waterTriangleCount:visual.water?.summary.triangles||0,
@@ -659,7 +671,10 @@ async function main(){
   if(!fieldResponse.ok)throw Error(`デモ地形データがありません (HTTP ${fieldResponse.status})`);
   const [manifest,field]=await Promise.all([manifestResponse.json(),fieldResponse.json()]);
   validateField(field);validateManifest(manifest);
-  await init(field,manifest);
+  const [roadSupplement,fixedWaterProfiles]=await Promise.all([loadRoadSupplement(manifest,root,fetch),loadWaterProfiles(manifest,root,fetch)]);
+  const home=manifest.tiles.find(t=>t.id==='north');
+  const surfaceMeshes=createSurfaceMeshLoader(manifest,root,fetch);
+  await init(await surfaceMeshes.attach(applyRoadSupplement(field,home,roadSupplement),home),manifest,roadSupplement,fixedWaterProfiles,surfaceMeshes);
  }catch(e){
   console.error(e);status.classList.add('failed');status.textContent='読みこめませんでした';document.querySelector('#retry').hidden=false;
  }

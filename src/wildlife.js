@@ -3,6 +3,7 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {clone as cloneSkinned} from 'three/addons/utils/SkeletonUtils.js';
 import {terrainMeshHeight} from '../lib/geo.mjs';
 import {waterSurfaceElevationAt} from '../lib/water-field.mjs';
+import {surfaceWaterHeight} from '../lib/surface-mesh.mjs';
 
 // Kenney Cube Pets bee and Gobkit duck: both CC0, sources recorded in PRIVATE.
 // No simulation of verified wildlife habitat. These are decorative inhabitants.
@@ -11,6 +12,7 @@ const species={bee:{height:.40,hover:1.6},duck:{height:.85,hover:0}};
 const WATER_CLEARANCE=.04;
 
 export function wildlifeFootHeight(field,x,z,baseElevation,profiles=[]){
+ if(field.surface){const y=surfaceWaterHeight(field.surface,x,z);if(y!==null)return y+WATER_CLEARANCE-baseElevation;}
  const terrain=terrainMeshHeight(field.terrain,x,z);
  const water=waterSurfaceElevationAt(field,[x,z],profiles);
  return Math.max(terrain,water===null?-Infinity:water+WATER_CLEARANCE)-baseElevation;
