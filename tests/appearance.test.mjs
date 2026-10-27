@@ -18,7 +18,7 @@ test('building palettes are stable across reconstruction, clipping IDs and coord
 test('full and overview reuse roof colours without changing geometry or batch counts',()=>{
  for(const detail of ['full','overview']){
   const before=build(detail,false),after=build(detail,true),reload=build(detail,true);
-  assert.equal(after.children.length,detail==='full'?2:1);
+  assert.equal(after.children.length,1);
   after.children.forEach((mesh,i)=>{
    assert.deepEqual(mesh.geometry.attributes.position.array,before.children[i].geometry.attributes.position.array);
    assert.deepEqual(mesh.geometry.attributes.normal.array,before.children[i].geometry.attributes.normal.array);
@@ -26,12 +26,12 @@ test('full and overview reuse roof colours without changing geometry or batch co
    assert.deepEqual(mesh.geometry.attributes.color.array,reload.children[i].geometry.attributes.color.array);
    assert.equal(mesh.material.vertexColors,true);
   });
-  const roofs=after.children.at(-1).geometry.attributes.color;
+  const geometry=after.children[0].geometry,roofs=geometry.attributes.color,roofOffset=buildings.length*24;
   buildings.forEach((b,i)=>{
    const c=new THREE.Color(buildingColors(b).roof);
-   assert.ok(Math.abs(roofs.getX(i*6)-c.r)<1e-6);
-   assert.ok(Math.abs(roofs.getY(i*6)-c.g)<1e-6);
-   assert.ok(Math.abs(roofs.getZ(i*6)-c.b)<1e-6);
+   assert.ok(Math.abs(roofs.getX(geometry.index.getX(roofOffset+i*6))-c.r)<1e-6);
+   assert.ok(Math.abs(roofs.getY(geometry.index.getX(roofOffset+i*6))-c.g)<1e-6);
+   assert.ok(Math.abs(roofs.getZ(geometry.index.getX(roofOffset+i*6))-c.b)<1e-6);
   });
  }
 });
@@ -55,5 +55,39 @@ test('instanced nature tint preserves authored colours, geometry and matrices; t
   assert.equal(on.children.length,off.children.length);let tinted=0;
   on.children.forEach((m,i)=>{const b=off.children[i];assert.deepEqual(m.instanceMatrix.array,b.instanceMatrix.array);assert.deepEqual(m.geometry.attributes.position.array,b.geometry.attributes.position.array);assert.equal(m.material.color.getHex(),b.material.color.getHex());assert.equal(m.count,b.count);if(m.instanceColor)tinted++;});
   assert.equal(tinted>0,!textured);renderer.dispose();
+ }
+});
+
+test('both LODs preserve complete footprint/height, outward walls, roof, and indexed geometry',()=>{
+ const full=build('full',true).children[0],overview=build('overview',true).children[0];
+ for(const key of ['position','normal','color'])assert.deepEqual(full.geometry.attributes[key].array,overview.geometry.attributes[key].array);
+ assert.deepEqual(full.geometry.index.array,overview.geometry.index.array);
+ assert.equal(full.geometry.index.count,buildings.length*30);assert.ok(full.geometry.attributes.position.count<full.geometry.index.count);
+ for(const b of buildings){const ray=new THREE.Raycaster(new THREE.Vector3(b.footprint[0][0]+1,b.height+10,1),new THREE.Vector3(0,-1,0));const hits=ray.intersectObject(full);assert.ok(hits.length);assert.ok(Math.abs(hits[0].point.y-b.height)<1e-5);}
+});
+
+test('overview ray acceleration matches actual triangles, including transforms, occlusion range and missed roofs',()=>{
+ const group=build('overview',true),mesh=group.children[0];group.position.set(120,7,-80);group.updateMatrixWorld(true);
+ const accelerated=mesh.raycast;let seed=710;
+ const random=()=>((seed=(seed*1664525+1013904223)>>>0)/2**32);
+ for(let i=0;i<240;i++){
+  const origin=new THREE.Vector3(120+random()*200,7+random()*30,-80+(random()-.5)*40);
+  const target=new THREE.Vector3(120+random()*200,7+random()*10,-80+random()*2);
+  const ray=new THREE.Raycaster(origin,target.sub(origin).normalize(),0,i%3?200:3),a=[],b=[];
+  accelerated.call(mesh,ray,a);THREE.Mesh.prototype.raycast.call(mesh,ray,b);
+  const sorted=v=>v.map(h=>h.distance).sort((a,b)=>a-b);
+  assert.deepEqual(sorted(a),sorted(b));assert.equal(mesh.geometry.drawRange.start,0);assert.equal(mesh.geometry.drawRange.count,Infinity);
+ }
+});
+
+
+test('concave and reversed footprints do not fill empty corners or lose outward walls',()=>{
+ const polygon=[[0,0],[8,0],[8,3],[3,3],[3,8],[0,8]];
+ for(const footprint of [polygon,[...polygon].reverse()])for(const detail of ['full','overview']){
+  const layers={};addBuildings({...field,osm:{buildings:[{id:1,height:9,footprint}]}},new THREE.Group(),layers,detail);
+  const mesh=layers.buildings.children[0];mesh.updateMatrixWorld(true);
+  const down=(x,z)=>new THREE.Raycaster(new THREE.Vector3(x,20,z),new THREE.Vector3(0,-1,0)).intersectObject(mesh);
+  assert.equal(down(6,6).length,0,'The empty concave corner must remain empty');assert.ok(down(1,6).length);
+  for(const [from,to] of [[[4,4,-5],[4,4,1]],[[-5,4,4],[1,4,4]]])assert.ok(new THREE.Raycaster(new THREE.Vector3(...from),new THREE.Vector3(...to).sub(new THREE.Vector3(...from)).normalize()).intersectObject(mesh).length);
  }
 });

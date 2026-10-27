@@ -10,6 +10,7 @@ on:
       - 'scripts/browser-small-markers.mjs'
       - 'scripts/browser-notebook.mjs'
       - 'scripts/browser-collection-states.mjs'
+      - 'scripts/browser-direct-collect.mjs'
       - 'src/main.js'
       - 'src/exploration-map.js'
       - 'src/landmark-fx.js'
@@ -83,6 +84,7 @@ jobs:
           node scripts/browser-compass-a.mjs "$BIOME_FIXTURE" artifacts/mt07e2b
           node scripts/browser-small-markers.mjs "$BIOME_FIXTURE" artifacts/mt07e2a
           node scripts/browser-collection-states.mjs "$BIOME_FIXTURE" artifacts/mt07e1
+          node scripts/browser-direct-collect.mjs "$BIOME_FIXTURE" artifacts/mt07e1
           python scripts/audit-spawn-safety.py "$BIOME_FIXTURE" "$BIOME_FIXTURE/public/data/biomes.json" artifacts/mt07/safety.json
       - name: Publish fictional mobile screenshot
         if: always()
