@@ -14,12 +14,16 @@ async function foreignBrowsers(){
   const cmd=(await fs.readFile('/proc/'+pid+'/cmdline','utf8')).replaceAll('\0',' ');
   if(!/chrom(e|ium)/.test(cmd)||!cmd.includes('--remote-debugging-pipe')||cmd.includes('--type='))continue;
   const status=await fs.readFile('/proc/'+pid+'/status','utf8'),parent=Number(status.match(/^PPid:\s+(\d+)/m)?.[1]);
-  if(parent!==process.pid)found.push({pid:Number(pid),parent});
+  const parentCommand=(await fs.readFile('/proc/'+parent+'/cmdline','utf8')).replaceAll('\0',' ');
+  // /proc can expose host PIDs while Node uses a container PID namespace.
+  const owned=parentCommand.includes(path.basename(process.argv[1]))&&parentCommand.includes(outArg);
+  if(!owned)found.push({pid:Number(pid),parent});
  }catch{}}return found;
 }
 const browser=await chromium.launch({executablePath:process.env.MICHI_CHROMIUM_EXECUTABLE||undefined,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']}),rows=[];
 try{for(const c of cases){
  let external=await foreignBrowsers();while(external.length){console.log(JSON.stringify({event:'WAIT_EXTERNAL_BROWSER',external}));await new Promise(r=>setTimeout(r,5000));external=await foreignBrowsers();}
+ const trialStartedAt=new Date().toISOString(),hostCpuBefore=await fs.readFile('/sys/fs/cgroup/cpu.stat','utf8').catch(()=>null);
  const interference=[];const monitor=setInterval(()=>{void foreignBrowsers().then(pids=>{if(pids.length)interference.push({time:Date.now(),pids});});},1000);
  const server=await preview({root:path.resolve(c.root),build:{outDir:'public'},preview:{host:'127.0.0.1',port:8110,strictPort:true}});
  let context;
@@ -45,7 +49,7 @@ try{for(const c of cases){
  const sorted=[...walk.frames].sort((a,b)=>a-b);walk.quantiles=Object.fromEntries([50,90,95,99].map(p=>['p'+p,sorted[Math.floor(p/100*sorted.length)]]));walk.max=sorted.at(-1);
  walk.distance=walk.positions.slice(1).reduce((sum,p,i)=>sum+Math.hypot(p[0]-walk.positions[i][0],p[1]-walk.positions[i][1]),0);
  assert.ok(walk.distance>5);assert.ok(walk.positions.every(p=>Math.abs(p[0]-corridor.x)<.1&&Math.abs(p[1]-corridor.z)<14),'Movement escaped checked corridor');assert.deepEqual(errors,[]);
- rows.push({...c,interference,walk,stats:await page.evaluate(()=>__michiDebug.renderStats()),errors});
+ rows.push({...c,trialStartedAt,trialEndedAt:new Date().toISOString(),hostCpuBefore,hostCpuAfter:await fs.readFile('/sys/fs/cgroup/cpu.stat','utf8').catch(()=>null),interference,walk,stats:await page.evaluate(()=>__michiDebug.renderStats()),errors});
  await fs.writeFile(outArg,JSON.stringify({status:rows.some(r=>r.interference.length)?'CONTAMINATED':rows.length===cases.length?'COMPLETE':'IN_PROGRESS',renderer:'Chromium '+browser.version()+' SwiftShader; physical GPU UNVERIFIED',protocol:'Sequential fresh contexts; DPR1; same collision-checked 24m bidirectional corridor and yaw; native W/S input; 120-frame moving warmup, reset, 240 measured RAF intervals; order rotated/reversed; five repetitions per device and variant. More loops may occur in slower trials; positions and distances retained.',corridor,rows},null,2));
  console.log(JSON.stringify({variant:c.variant,device:c.device,repeat:c.repeat,...walk.quantiles,max:walk.max,distance:walk.distance}));
  }finally{clearInterval(monitor);await context?.close();await new Promise(r=>server.httpServer.close(r));}
