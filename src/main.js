@@ -393,7 +393,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  try{const response=await fetch(import.meta.env.BASE_URL+'data/npcs.json',{cache:'no-store'});if(response.ok&&response.headers.get('content-type')?.includes('json')){const config=await response.json();if(config.schema===1&&Array.isArray(config.groups))npcGroups=config.groups.map(g=>({...g,dialogues:g.dialogues||(g.dialogueId==='kiki-jiji'?KIKI_JIJI_DIALOGUES:undefined)}));}}catch(error){console.warn('NPC configuration unavailable',error);}
  if(new URLSearchParams(location.search).get('npcDemo')==='1'&&npcGroups.length===0){
    // Development fixture, relative to the fictional initial spawn. Never used by default.
-   npcGroups=[{groupId:'kiki-jiji',spawnAnchor:[spawn.x+5,spawn.z+5],spawnRadius:0,interactionRadius:7,displayRadius:65,movementMode:'fixed',members:[{id:'kiki',offset:[-.8,0],height:1.65},{id:'jiji',offset:[.8,0],height:.7}],dialogues:KIKI_JIJI_DIALOGUES}];
+   npcGroups=[{groupId:'kiki-jiji',spawnAnchor:[spawn.x-5*Math.sin(spawn.yaw),spawn.z-5*Math.cos(spawn.yaw)],spawnRadius:0,interactionRadius:7,displayRadius:65,movementMode:'fixed',members:[{id:'kiki',offset:[-1.4*Math.cos(spawn.yaw),1.4*Math.sin(spawn.yaw)],height:1.65},{id:'jiji',offset:[1.4*Math.cos(spawn.yaw),-1.4*Math.sin(spawn.yaw)],height:.7}],dialogues:KIKI_JIJI_DIALOGUES}];
  }
  let npc=null;try{npc=createNpcSystem({scene,container,groups:npcGroups,ground:(x,z)=>terrainHeight(world,x,z),camera});npc.installSettings(document.querySelector('#notebook-menu'));}catch(error){console.warn('NPC disabled:',error);container.dataset.npcError='true';}
  const controls={target:new THREE.Vector3(),update(){},dispose(){}};
