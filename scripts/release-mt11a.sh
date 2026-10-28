@@ -22,6 +22,7 @@ gh api repos/miyatayuuma/dreamcore-games/tarball/main | tar -xz --strip-componen
 export MT11A_WORK="$work"
 export MT11A_TOKEN="$(gcloud auth print-access-token)"
 python3 "$work/public/scripts/release-mt11a-guard.py" snapshot
+cat "$work/restore.txt"
 unset MT11A_TOKEN
 node "$work/public/scripts/assemble-production.mjs" --private "$work/private" --public "$work/public" --out "$work/site"
 node "$work/public/scripts/verify-production-overlay.mjs" --private "$work/private" --public "$work/public" --site "$work/site"
