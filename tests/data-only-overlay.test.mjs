@@ -30,7 +30,7 @@ async function setup(t) {
   const priv = path.join(root, 'priv');
   await fs.mkdir(pub);
   await fs.mkdir(priv);
-  for (const name of ['index.html', 'src/main.js', 'lib/field.mjs', 'package.json']) {
+  for (const name of ['index.html', 'src/main.js', 'lib/field.mjs', 'package.json', 'package-lock.json']) {
     await put(pub, name, 'PUBLIC:' + name);
     await put(priv, name, 'PRIVATE-LEGACY:' + name);
   }
@@ -41,7 +41,7 @@ async function setup(t) {
   await put(priv, 'public/assets/nature/model.glb', 'fake binary model');
   const manifest = {
     schemaVersion: 2,
-    publicPaths: ['index.html', 'src', 'lib', 'package.json'],
+    publicPaths: ['index.html', 'src', 'lib', 'package.json', 'package-lock.json'],
     privatePaths: ['public/data', 'public/assets'],
     protectedPaths: ['public/data', 'public/assets']
   };
@@ -56,10 +56,17 @@ test('v2 stages PUBLIC-only code and PRIVATE-only data/assets', async t => {
   assert.equal(result.schemaVersion, 2);
   assert.equal(await fs.readFile(path.join(site, 'index.html'), 'utf8'), 'PUBLIC:index.html');
   assert.equal(await fs.readFile(path.join(site, 'lib/field.mjs'), 'utf8'), 'PUBLIC:lib/field.mjs');
+  assert.equal(await fs.readFile(path.join(site, 'package-lock.json'), 'utf8'), 'PUBLIC:package-lock.json');
   assert.equal(await fs.readFile(path.join(site, 'public/data/tiles.json'), 'utf8'), '{"real":true}');
   await assert.rejects(fs.access(path.join(site, 'src/legacy-only.js')));
   await assert.rejects(fs.access(path.join(site, 'public/data/synthetic.json')));
   assert.equal((await verifyProductionOverlay({ publicRoot: pub, privateRoot: priv, siteRoot: site })).schemaVersion, 2);
+  await fs.writeFile(path.join(site, 'package-lock.json'), 'tampered lock');
+  await assert.rejects(
+    verifyProductionOverlay({ publicRoot: pub, privateRoot: priv, siteRoot: site }),
+    /Production integrity mismatch/
+  );
+  await fs.writeFile(path.join(site, 'package-lock.json'), 'PUBLIC:package-lock.json');
   await fs.writeFile(path.join(site, 'public/data/tiles.json'), '{"tampered":true}');
   await assert.rejects(
     verifyProductionOverlay({ publicRoot: pub, privateRoot: priv, siteRoot: site }),

@@ -55,11 +55,13 @@ export function validateSyncManifest(raw) {
   // v2 is deliberately narrow: executable files only come from PUBLIC;
   // PRIVATE supplies immutable runtime JSON/assets, never scripts or HTML.
   const publicPaths = ['index.html', 'lib', 'package.json', 'src'];
+  const publicPathsWithLock = ['index.html', 'lib', 'package-lock.json', 'package.json', 'src'];
   const privatePaths = ['public/assets', 'public/data'];
-  if (!sameList([...data.publicPaths].sort(), publicPaths) ||
+  const actualPublic = [...data.publicPaths].sort();
+  if (!(sameList(actualPublic, publicPaths) || sameList(actualPublic, publicPathsWithLock)) ||
       !sameList([...data.privatePaths].sort(), privatePaths) ||
       !sameList([...data.protectedPaths].sort(), privatePaths)) {
-    throw new Error('Schema v2 requires PUBLIC index.html/lib/package.json/src and PRIVATE public/assets/public/data only');
+    throw new Error('Schema v2 requires PUBLIC index.html/lib/package.json/src (optionally package-lock.json) and PRIVATE public/assets/public/data only');
   }
   if (data.publicPaths.some(a => data.privatePaths.some(b => intersects(a, b)))) {
     throw new Error('Schema v2 source paths must not overlap');

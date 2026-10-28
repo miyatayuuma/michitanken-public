@@ -16,13 +16,13 @@ PRIVATEのproduction-public-sync.json：
 ```json
 {
   "schemaVersion": 2,
-  "publicPaths": ["index.html", "src", "lib", "package.json"],
+  "publicPaths": ["index.html", "src", "lib", "package.json", "package-lock.json"],
   "privatePaths": ["public/data", "public/assets"],
   "protectedPaths": ["public/data", "public/assets"]
 }
 ```
 
-v2は指定パスを厳密に要求し、PUBLIC/PRIVATE間の重複所有を拒否する。PRIVATEのruntime dataではJSONのみ、assetsではJSON・画像・GLB・音声・出典テキスト等のみを許可する。HTML/JS等の実行コードをPRIVATEから混入させない。
+v2は指定パスを厳密に要求し、PUBLIC/PRIVATE間の重複所有を拒否する。旧v2の固定SHA互換のため、manifestのpackage-lock.jsonは省略可能だが、新しい固定ビルドでは必須とする。lockはPUBLICが所有し、統合出力へコピー・SHA照合してnpm ciで依存を再現する。PRIVATEのruntime dataではJSONのみ、assetsではJSON・画像・GLB・音声・出典テキスト等のみを許可する。HTML/JS等の実行コードをPRIVATEから混入させない。
 
 既存のPRIVATE lib/field.mjsにある実地理のCENTERは取得用レガシーコードとして残せるが、組み立てたruntimeには取り込まない。中心座標はPRIVATEのpublic/data/field.jsonおよびtiles.jsonから読み込む。
 

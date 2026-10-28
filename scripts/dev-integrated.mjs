@@ -117,7 +117,10 @@ async function main(argv) {
     const hasLock = await fs.access(path.join(result.siteRoot, 'package-lock.json'))
       .then(() => true, () => false);
     if (!hasLock) {
-      console.log('No package-lock.json in PRIVATE overlay: dependency resolution is not release-reproducible.');
+      if (result.verification.schemaVersion === 2 && options.expectedPublicSha && options.expectedPrivateSha) {
+        throw new Error('Pinned v2 build requires PUBLIC package-lock.json in the integrated site');
+      }
+      console.log('No package-lock.json in integrated site: dependency resolution is not release-reproducible.');
     }
     npm(result.siteRoot, [hasLock ? 'ci' : 'install', '--no-audit', '--no-fund']);
     npm(result.siteRoot, ['run', 'build', '--', '--base=/games/michitanken/']);
