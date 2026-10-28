@@ -5,9 +5,14 @@ import {prepareNpcZip} from './npc-zip.js';
 import {BOOK_GROUPS} from '../lib/book-characters.mjs';
 
 // The host supplies fictional or private group positions; this module never uploads images.
-export function createNpcSystem({scene,container,groups,ground,camera,storage,blocked=()=>true,onMeet=()=>{}}){
+export function createNpcSystem({scene,container,groups,ground,camera,storage,blocked=()=>true,onMeet=()=>{},imagePacks=null}){
  if(storage===undefined){try{storage=globalThis.localStorage;}catch{storage=null;}}
- validateGroups(groups);const imageStore=createNpcImageStore(),dialogue=createDialogueState(storage),live=new Map();let closed=false,mode='walk',px=0,pz=0,occluders=()=>[],refreshTime=0,generation=0;
+ validateGroups(groups);
+ // A pack can be added to PRIVATE npc-catalog.json without changing JS.
+ // Preserve compatibility with the original 9-sheet ZIP on older installations.
+ const defaultPack={id:'original-nine',name:'既存9枚の画像',spriteIds:BOOK_GROUPS.flatMap(g=>g.groupId==='twins'?['twins']:g.members.map(([id])=>id))};
+ const packs=Array.isArray(imagePacks)&&imagePacks.length?imagePacks:[defaultPack];
+ const imageStore=createNpcImageStore(),dialogue=createDialogueState(storage),live=new Map();let closed=false,mode='walk',px=0,pz=0,occluders=()=>[],refreshTime=0,generation=0;
  // Device-only size preference; preserve authored differences between characters.
  const sizeKey='michitanken.npc.size.v1';
  const scaleClamp=value=>Math.min(1.5,Math.max(.65,Number(value)||1));
@@ -43,7 +48,8 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
  }
  function release(id){const v=live.get(id);if(!v)return;live.delete(id);v.cancelled=true;for(const m of v.members){scene.remove(m.sprite);m.sprite.material.map?.dispose();m.animation?.bitmap?.close();m.sprite.material.dispose();}}
  async function mount(g){if(live.has(g.groupId)||closed)return;const v={group:g,members:[],cancelled:false,x:g.spawnAnchor[0],z:g.spawnAnchor[1],target:null,wait:1+Math.random()*3};live.set(g.groupId,v);const token=generation;
-  const visualMembers=g.groupId==='twins'?[{...g.members[0],id:'twins',offset:[0,0]}]:g.members;v.visualCount=visualMembers.length;
+  const sharedSpriteId=g.visualSpriteId||(g.groupId==='twins'?'twins':null);
+  const visualMembers=sharedSpriteId?[{...g.members[0],id:sharedSpriteId,offset:[0,0]}]:g.members;v.visualCount=visualMembers.length;
   for(const m of visualMembers){let y;try{y=ground(g.spawnAnchor[0]+m.offset[0],g.spawnAnchor[1]+m.offset[1]);}catch{release(g.groupId);return;}if(!Number.isFinite(y)){release(g.groupId);return;}
    const animation=await textureFor(m.id),tex=animation.texture;if(closed||v.cancelled||token!==generation){tex.dispose();animation.bitmap?.close();return;}const material=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:.05,depthTest:true,depthWrite:true});const sprite=new THREE.Sprite(material);const aspect=tex.image.width/tex.image.height;sprite.scale.set(m.height*scaleFactor*aspect,m.height*scaleFactor,1);sprite.center.set(.5,0);sprite.position.set(g.spawnAnchor[0]+m.offset[0],y,g.spawnAnchor[1]+m.offset[1]);sprite.name='npc-'+m.id;sprite.visible=false;scene.add(sprite);v.members.push({id:m.id,sprite,animation,offset:m.offset,baseHeight:m.height,speed:.65+Math.random()*.12});
   }
@@ -91,22 +97,26 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
   const sizeLabel=document.createElement('label');sizeLabel.className='npc-size-setting';sizeLabel.textContent='登場人物の大きさ ';
   const sizeOutput=document.createElement('output');sizeOutput.textContent=Math.round(scaleFactor*100)+'%';
   const sizeInput=document.createElement('input');sizeInput.type='range';sizeInput.min='65';sizeInput.max='150';sizeInput.step='5';sizeInput.value=String(Math.round(scaleFactor*100));sizeInput.setAttribute('aria-label','登場人物の大きさ');sizeInput.oninput=()=>{setScale(Number(sizeInput.value)/100);sizeOutput.textContent=sizeInput.value+'%';};sizeLabel.append(sizeInput,sizeOutput);section.append(sizeLabel);
-  const explanation=document.createElement('p');explanation.textContent='9枚の画像をまとめたZIPを1つ選ぶと、この端末だけに登録されます。画像は送信されません。';section.append(explanation);
-  const zipLabel=document.createElement('label');zipLabel.textContent='画像ZIPを一括登録';
-  const zipInput=document.createElement('input');zipInput.type='file';zipInput.accept='.zip,application/zip,application/x-zip-compressed';zipInput.setAttribute('aria-label','9枚の画像ZIP');zipLabel.append(zipInput);section.append(zipLabel);
-  const zipStatus=document.createElement('p');zipStatus.setAttribute('role','status');zipStatus.textContent='ZIPを選択してください';section.append(zipStatus);
-  zipInput.onchange=async()=>{
-   const file=zipInput.files?.[0];if(!file)return;
-   zipInput.disabled=true;zipStatus.textContent='ZIPの画像を確認しています…';
-   try{
-    const ids=BOOK_GROUPS.flatMap(g=>g.groupId==='twins'?['twins']:g.members.map(([id])=>id));
-    const records=await prepareNpcZip(file,ids);
-    await imageStore.putMany(records);
-    await refreshImages();
-    zipStatus.textContent=records.length+'枚の画像を登録しました';
-   }catch(error){zipStatus.textContent=error?.message||'画像ZIPを読み込めませんでした';}
-   finally{zipInput.disabled=false;zipInput.value='';}
-  };
+  const explanation=document.createElement('p');explanation.textContent='画像ZIPはこの端末にだけ保存されます。新キャラの画像は追加ZIPで登録でき、既存画像は消えません。';section.append(explanation);
+  // Sprite packs are independent transactions: importing a new group never
+  // requires re-selecting the original nine images or changing sprite IDs.
+  for(const pack of packs){
+   const zipLabel=document.createElement('label');zipLabel.textContent=pack.name+'：ZIPを登録';
+   const zipInput=document.createElement('input');zipInput.type='file';zipInput.accept='.zip,application/zip,application/x-zip-compressed';
+   zipInput.setAttribute('aria-label',pack.spriteIds.length+'枚の画像ZIP');zipLabel.append(zipInput);section.append(zipLabel);
+   const zipStatus=document.createElement('p');zipStatus.setAttribute('role','status');zipStatus.textContent='ZIPを選択してください';section.append(zipStatus);
+   zipInput.onchange=async()=>{
+    const file=zipInput.files?.[0];if(!file)return;
+    zipInput.disabled=true;zipStatus.textContent='ZIPの画像を確認しています…';
+    try{
+     const records=await prepareNpcZip(file,pack.spriteIds);
+     await imageStore.putMany(records);
+     await refreshImages();
+     zipStatus.textContent=records.length+'枚の画像を登録しました';
+    }catch(error){zipStatus.textContent=error?.message||'画像ZIPを読み込めませんでした';}
+    finally{zipInput.disabled=false;zipInput.value='';}
+   };
+  }
   menu.append(section);
  }
  function dispose(){closed=true;generation++;stopDialogue();for(const id of [...live.keys()])release(id);panel.remove();void imageStore.close().catch(()=>{});}
