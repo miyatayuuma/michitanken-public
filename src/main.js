@@ -1,4 +1,5 @@
 import {setupCompass} from './compass.js';
+import {applySiteConfig} from './site-config.js';
 import {setupNotebook,icon,iconButton} from './notebook-ui.js';
 import {compassBearing,unwrapAngle} from '../lib/map-view.mjs';
 import {createWarpRegistry,canWarp,requiredLandingTiles,validateLanding,createWarpController} from '../lib/warp.mjs';
@@ -735,14 +736,21 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
 async function main(){
  try{
   const root=import.meta.env.BASE_URL;
-  const [manifestResponse,fieldResponse]=await Promise.all([
+  const [manifestResponse,fieldResponse,siteConfigResponse]=await Promise.all([
     fetch(`${root}data/tiles.json`,{cache:'no-store'}),
-    fetch(`${root}data/field.json`,{cache:'no-store'})
+    fetch(`${root}data/field.json`,{cache:'no-store'}),
+    fetch(`${root}data/site-config.json`,{cache:'no-store'})
   ]);
   if(!manifestResponse.ok)throw Error(`tiles.json がありません (HTTP ${manifestResponse.status})`);
   if(!fieldResponse.ok)throw Error(`デモ地形データがありません (HTTP ${fieldResponse.status})`);
   const [manifest,field]=await Promise.all([manifestResponse.json(),fieldResponse.json()]);
   validateField(field);validateManifest(manifest);
+  const requiredSiteConfig=document.documentElement.hasAttribute('data-site-config-required');
+  const configIsJson=siteConfigResponse.ok && (siteConfigResponse.headers.get('content-type')||'').includes('json');
+  if(configIsJson)applySiteConfig(await siteConfigResponse.json());
+  else if(requiredSiteConfig||(!siteConfigResponse.ok&&siteConfigResponse.status!==404)) {
+    throw Error('site-config.json がありません (HTTP '+siteConfigResponse.status+')');
+  }
   const [roadSupplement,fixedWaterProfiles]=await Promise.all([loadRoadSupplement(manifest,root,fetch),loadWaterProfiles(manifest,root,fetch)]);
   const home=manifest.tiles.find(t=>t.id==='north');
   const surfaceMeshes=createSurfaceMeshLoader(manifest,root,fetch);
