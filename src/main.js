@@ -451,7 +451,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
      console.warn('NPC provisional placement unavailable; rejected candidate counts:',JSON.stringify(rejected));
    }
  }
- let npc=null;try{npc=createNpcSystem({scene,container,groups:npcGroups,ground:(x,z)=>terrainHeight(world,x,z),camera});npc.installSettings(document.querySelector('#notebook-menu'));}catch(error){console.warn('NPC disabled:',error);container.dataset.npcError='true';}
+ let npc=null;try{npc=createNpcSystem({scene,container,groups:npcGroups,ground:(x,z)=>terrainHeight(world,x,z),blocked:(x,z)=>!!collisionReason(world,x,z,.38),camera});npc.installSettings(document.querySelector('#notebook-menu'));}catch(error){console.warn('NPC disabled:',error);container.dataset.npcError='true';}
  const controls={target:new THREE.Vector3(),update(){},dispose(){}};
  controls.enableDamping=true;controls.dampingFactor=.07;
  controls.maxPolarAngle=Math.PI/2.05;controls.minDistance=15;controls.maxDistance=9000;
@@ -761,4 +761,5 @@ async function main(){
  }
 }
 main();
+
 
