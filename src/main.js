@@ -30,6 +30,7 @@ import {loadPlayerSprite} from './player-sprite.js';
 import {createNpcSystem} from './npc.js';
 import {KIKI_JIJI_DIALOGUES} from '../lib/npc.mjs';
 import {BOOK_GROUP_BY_ID} from '../lib/book-characters.mjs';
+import {validateNpcCatalog,resolveNpcPlacements} from '../lib/npc-catalog.mjs';
 import {renderedFootHeight} from '../lib/avatar-ground.mjs';
 import './style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.createElement('aside');
@@ -451,7 +452,17 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
      console.warn('NPC provisional placement unavailable; rejected candidate counts:',JSON.stringify(rejected));
    }
  }
- let npc=null;try{npc=createNpcSystem({scene,container,groups:npcGroups,ground:(x,z)=>terrainHeight(world,x,z),blocked:(x,z)=>!!collisionReason(world,x,z,.38),camera,onMeet:g=>map2d?.recordNpcMeet(g)});npc.installSettings(document.querySelector('#notebook-menu'));}catch(error){console.warn('NPC disabled:',error);container.dataset.npcError='true';}
+ // OPTIONAL PRIVATE catalog. Separates cast, voiced text and image ZIP packs
+ // from geography and PUBLIC engine. Existing installs retain their fallback.
+ let npcCatalog=null;
+ try{
+  const response=await fetch(import.meta.env.BASE_URL+'data/npc-catalog.json',{cache:'no-store'});
+  if(response.ok){
+   npcCatalog=validateNpcCatalog(await response.json());
+   npcGroups=resolveNpcPlacements(npcGroups,npcCatalog,{fallback:BOOK_GROUP_BY_ID});
+  }else if(response.status!==404)console.warn('NPC catalog HTTP',response.status);
+ }catch(error){npcCatalog=null;console.warn('NPC catalog unavailable; using previous dialogues',error);}
+ let npc=null;try{npc=createNpcSystem({scene,container,groups:npcGroups,ground:(x,z)=>terrainHeight(world,x,z),blocked:(x,z)=>!!collisionReason(world,x,z,.38),camera,onMeet:g=>map2d?.recordNpcMeet(g),imagePacks:npcCatalog?.spritePacks});npc.installSettings(document.querySelector('#notebook-menu'));}catch(error){console.warn('NPC disabled:',error);container.dataset.npcError='true';}
  const controls={target:new THREE.Vector3(),update(){},dispose(){}};
  controls.enableDamping=true;controls.dampingFactor=.07;
  controls.maxPolarAngle=Math.PI/2.05;controls.minDistance=15;controls.maxDistance=9000;
