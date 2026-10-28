@@ -416,6 +416,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    const side=[Math.cos(spawn.yaw),-Math.sin(spawn.yaw)];
    const offsets=[[-1.4*side[0],-1.4*side[1]],[1.4*side[0],1.4*side[1]]];
    let chosen=null;
+   const rejected={road:0,collision:0,landing:0,path:0,error:0};
    // Prefer positions in front of the initial camera; progressively widen search.
    for(const distance of [6,8,10,12,16,20,25]){
      for(const angle of [0,.25,-.25,.5,-.5,.8,-.8,1.2,-1.2,Math.PI]){
@@ -425,15 +426,16 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
        let valid=true;
        for(const [mx,mz] of memberPositions){
          try{
-           if(!roadClear(mx,mz,1)||collisionReason(world,mx,mz,1)){valid=false;break;}
+           if(!roadClear(mx,mz,1)){rejected.road++;valid=false;break;}
+           if(collisionReason(world,mx,mz,1)){rejected.collision++;valid=false;break;}
            const y=terrainHeight(world,mx,mz)+world.baseElevation;
-           if(!validateLanding(world,{confirmed:true,gameSafety:'GAME_SAFE_CONFIRMED',clearance:1.5,position:[mx,y,mz],yaw:spawn.yaw}).ok){valid=false;break;}
-         }catch{valid=false;break;}
+           if(!validateLanding(world,{confirmed:true,gameSafety:'GAME_SAFE_CONFIRMED',clearance:1.5,position:[mx,y,mz],yaw:spawn.yaw}).ok){rejected.landing++;valid=false;break;}
+         }catch{rejected.error++;valid=false;break;}
        }
        if(!valid)continue;
        // Keep the center reachable from the start in the loaded game geometry.
        for(let t=.1;t<=1.001;t+=.1){
-         if(collisionReason(world,spawn.x+(x-spawn.x)*t,spawn.z+(z-spawn.z)*t,.7)){valid=false;break;}
+         if(collisionReason(world,spawn.x+(x-spawn.x)*t,spawn.z+(z-spawn.z)*t,.7)){rejected.path++;valid=false;break;}
        }
        if(valid){chosen=[x,z];break;}
      }
@@ -444,7 +446,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
      container.dataset.npcPlacement='provisional';
    }else{
      container.dataset.npcPlacement='unavailable';
-     console.warn('NPC provisional placement unavailable: no suitable loaded candidate');
+     console.warn('NPC provisional placement unavailable; rejected candidate counts:',JSON.stringify(rejected));
    }
  }
  let npc=null;try{npc=createNpcSystem({scene,container,groups:npcGroups,ground:(x,z)=>terrainHeight(world,x,z),camera});npc.installSettings(document.querySelector('#notebook-menu'));}catch(error){console.warn('NPC disabled:',error);container.dataset.npcError='true';}
