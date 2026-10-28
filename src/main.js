@@ -599,6 +599,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  if(new URLSearchParams(location.search).has('test')){
    window.__michiDebug={
      npcTargets:()=>npc?.targets()||[],
+    npcSnapshot:()=>npc?.snapshot()||[],
      ensureTile:id=>streamer.ensure(id),
      teleport:(x,z,yaw=Math.PI)=>{
        if(collisionReason(world,x,z))return false;
