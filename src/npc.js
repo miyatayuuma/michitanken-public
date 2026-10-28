@@ -36,10 +36,18 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
   if(d<.05){v.target=null;v.wait=1.5+Math.random()*3;return;}
   const nx=v.x+dx/d*travel,nz=v.z+dz/d*travel;
   if(g.members.some(m=>blocked(nx+m.offset[0],nz+m.offset[1]))){v.target=null;v.wait=.7+Math.random();return;}
-  v.x=nx;v.z=nz;
-  for(const m of v.members){const p=m.sprite.position,tx=v.x+m.offset[0],tz=v.z+m.offset[1],fx=tx-p.x,fz=tz-p.z,fd=Math.hypot(fx,fz),amount=Math.min(fd,m.speed*step);if(!fd)continue;
-   const x=p.x+fx/fd*amount,z=p.z+fz/fd*amount;if(blocked(x,z))continue;const y=ground(x,z);if(Number.isFinite(y))p.set(x,y,z);
+  // Commit a movement step only if every member can move safely. Otherwise
+  // the group centre would drift onward and leave a blocked companion behind.
+  const proposed=[];
+  for(const m of v.members){
+   const p=m.sprite.position,tx=nx+m.offset[0],tz=nz+m.offset[1],fx=tx-p.x,fz=tz-p.z,fd=Math.hypot(fx,fz),amount=Math.min(fd,m.speed*step);
+   const x=fd>0?p.x+fx/fd*amount:p.x,z=fd>0?p.z+fz/fd*amount:p.z;
+   let y;try{if(blocked(x,z))throw Error('blocked');y=ground(x,z);}catch{v.target=null;v.wait=.7+Math.random();return;}
+   if(!Number.isFinite(y)){v.target=null;v.wait=.7+Math.random();return;}
+   proposed.push([m.sprite.position,x,y,z]);
   }
+  v.x=nx;v.z=nz;
+  for(const [position,x,y,z] of proposed)position.set(x,y,z);
  }
  function update({dt,playerX,playerZ,currentMode,occlusion=()=>[]}){px=playerX;pz=playerZ;mode=currentMode;occluders=occlusion;dialogue.observe(groups,px,pz);if(mode!=='walk'&&dialogue.current)stopDialogue();if(mode==='walk')for(const v of live.values())move(v,dt);refreshTime+=dt;if(refreshTime<.25)return;refreshTime=0;for(const g of groups){if(groupInRange(g,px,pz,mode))void mount(g);else release(g.groupId);}}
  const ray=new THREE.Raycaster();
