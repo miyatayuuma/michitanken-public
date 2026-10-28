@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {createDialogueState,groupInRange,validateGroups,validRect} from '../lib/npc.mjs';
 import {createNpcImageStore} from './npc-storage.js';
+import {prepareNpcZip} from './npc-zip.js';
 import {BOOK_GROUPS} from '../lib/book-characters.mjs';
 
 // The host supplies fictional or private group positions; this module never uploads images.
@@ -58,11 +59,30 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
  }
  function interactNearest(){if(dialogue.current)return advance();const choices=[...live.values()].filter(v=>v.members.length===v.group.members.length&&v.members.some(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)<=v.group.interactionRadius)).sort((a,b)=>Math.min(...a.members.map(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)))-Math.min(...b.members.map(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz))));if(!choices.length)return false;const m=choices[0].members.slice().sort((a,b)=>Math.hypot(a.sprite.position.x-px,a.sprite.position.z-pz)-Math.hypot(b.sprite.position.x-px,b.sprite.position.z-pz))[0].sprite,p=m.position.clone();p.y+=m.scale.y*.5;p.project(camera);const rect=container.getBoundingClientRect();return interactAt(rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2,rect);}
  async function refreshImages(){generation++;for(const id of [...live.keys()])release(id);refreshTime=.25;}
- function installSettings(menu){const section=document.createElement('details');section.className='npc-settings';const summary=document.createElement('summary');summary.textContent='登場人物の画像';section.append(summary);const explanation=document.createElement('p');explanation.textContent='画像はこの端末に保存されます。使う1コマの範囲をピクセルで指定してください。';section.append(explanation);
+ function installSettings(menu){const section=document.createElement('details');section.className='npc-settings';const summary=document.createElement('summary');summary.textContent='登場人物の画像';section.append(summary);const explanation=document.createElement('p');explanation.textContent='10人分の画像をまとめたZIPを1つ選ぶと、この端末だけに登録されます。画像は送信されません。';section.append(explanation);
+  const zipLabel=document.createElement('label');zipLabel.textContent='画像ZIPを一括登録';
+  const zipInput=document.createElement('input');zipInput.type='file';zipInput.accept='.zip,application/zip,application/x-zip-compressed';zipInput.setAttribute('aria-label','10人分の画像ZIP');zipLabel.append(zipInput);section.append(zipLabel);
+  const zipStatus=document.createElement('p');zipStatus.setAttribute('role','status');zipStatus.textContent='ZIPを選択してください';section.append(zipStatus);
+  zipInput.onchange=async()=>{
+   const file=zipInput.files?.[0];if(!file)return;
+   zipInput.disabled=true;zipStatus.textContent='ZIPの画像を確認しています…';
+   try{
+    const ids=BOOK_GROUPS.flatMap(g=>g.members.map(([id])=>id));
+    const records=await prepareNpcZip(file,ids);
+    await imageStore.putMany(records);
+    await refreshImages();
+    zipStatus.textContent=records.length+'人分を登録しました。これで設定完了です。';
+   }catch(error){zipStatus.textContent=error?.message||'画像ZIPを読み込めませんでした';}
+   finally{zipInput.disabled=false;zipInput.value='';}
+  };
+  const manual=document.createElement('details');manual.className='npc-settings-manual';
+  const manualTitle=document.createElement('summary');manualTitle.textContent='個別の登録・削除（必要な場合のみ）';manual.append(manualTitle);
+  const manualNote=document.createElement('p');manualNote.textContent='ZIPを使わずに登録する場合だけ、1コマのピクセル範囲を指定します。';manual.append(manualNote);
+
   for(const [id,label] of BOOK_GROUPS.flatMap(group=>group.members.map(([id,label])=>[id,label]))){const box=document.createElement('fieldset');box.dataset.npcMember=id;const legend=document.createElement('legend');legend.textContent=label;box.append(legend);const input=document.createElement('input');input.type='file';input.accept='image/png,image/webp';input.setAttribute('aria-label',label+'画像');box.append(input);const info=document.createElement('p');info.setAttribute('role','status');info.textContent='画像を選択してください';box.append(info);const fields={};for(const [key,name] of [['x','左'],['y','上'],['width','幅'],['height','高さ']]){const l=document.createElement('label');l.textContent=name;const n=document.createElement('input');n.type='number';n.name=key;n.min='0';n.step='1';n.placeholder='px';l.append(n);box.append(l);fields[key]=n;}
    let dimensions=null;input.onchange=async()=>{dimensions=null;const f=input.files?.[0];if(!f)return;try{if(!['image/png','image/webp'].includes(f.type)||f.size>12*1024*1024)throw Error('PNG/WebP、12MB以下を選んでください');const b=await createImageBitmap(f);if(b.width*b.height>16777216){b.close();throw Error('画像が大きすぎます');}dimensions={width:b.width,height:b.height};b.close();info.textContent=`画像 ${dimensions.width} × ${dimensions.height} px。1コマを指定してください。`;}catch(e){info.textContent=e.message;}};
-   const save=document.createElement('button');save.type='button';save.textContent='登録';save.onclick=async()=>{try{const f=input.files?.[0],rect=Object.fromEntries(Object.entries(fields).map(([k,v])=>[k,v.value===''?NaN:Number(v.value)]));if(!f||!dimensions)throw Error('画像を選んでください');await imageStore.put(id,f,rect,dimensions.width,dimensions.height);info.textContent='この端末に保存しました';await refreshImages();}catch(e){info.textContent=e.message||'保存できませんでした';}};const remove=document.createElement('button');remove.type='button';remove.textContent='削除';remove.onclick=async()=>{try{await imageStore.delete(id);info.textContent='削除しました';await refreshImages();}catch{info.textContent='削除できませんでした';}};box.append(save,remove);section.append(box);
-  }menu.append(section);
+   const save=document.createElement('button');save.type='button';save.textContent='登録';save.onclick=async()=>{try{const f=input.files?.[0],rect=Object.fromEntries(Object.entries(fields).map(([k,v])=>[k,v.value===''?NaN:Number(v.value)]));if(!f||!dimensions)throw Error('画像を選んでください');await imageStore.put(id,f,rect,dimensions.width,dimensions.height);info.textContent='この端末に保存しました';await refreshImages();}catch(e){info.textContent=e.message||'保存できませんでした';}};const remove=document.createElement('button');remove.type='button';remove.textContent='削除';remove.onclick=async()=>{try{await imageStore.delete(id);info.textContent='削除しました';await refreshImages();}catch{info.textContent='削除できませんでした';}};box.append(save,remove);manual.append(box);
+  }section.append(manual);menu.append(section);
  }
  function dispose(){closed=true;generation++;stopDialogue();for(const id of [...live.keys()])release(id);panel.remove();void imageStore.close().catch(()=>{});}
  return {update,interactAt,interactNearest,advance,close:stopDialogue,installSettings,dispose,targets(){const rect=container.getBoundingClientRect();return [...live.values()].flatMap(v=>v.members.map(m=>{const p=m.sprite.position.clone();p.y+=m.sprite.scale.y/2;p.project(camera);return {id:m.id,x:rect.left+(p.x+1)*rect.width/2,y:rect.top+(1-p.y)*rect.height/2};}));},get talking(){return !!dialogue.current;},get visibleCount(){return [...live.values()].reduce((n,v)=>n+v.members.length,0);}};
