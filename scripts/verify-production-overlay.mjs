@@ -2,6 +2,7 @@ import { promises as fs, createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { integrateGameHtml } from './production-html.mjs';
 
 function safeRelative(value) {
   if (typeof value !== 'string' || !value || value.includes('\\') || value.includes('\0') ||
@@ -85,7 +86,14 @@ export async function verifyProductionOverlay({ privateRoot, publicRoot, siteRoo
     manifest[group] = manifest[group].map(safeRelative);
   }
   const counters = { protected: 0, public: 0 };
+  const integratedHtml = manifest.protectedPaths.includes('index.html') && manifest.publicPaths.includes('src') && manifest.publicPaths.includes('lib');
+  if(integratedHtml){
+    const expected=integrateGameHtml(await fs.readFile(path.join(privateDir,'index.html'),'utf8'),await fs.readFile(path.join(publicDir,'index.html'),'utf8'));
+    if((await fs.readFile(path.join(siteDir,'index.html'),'utf8'))!==expected)throw Error('Integrated game HTML mismatch');
+    counters.protected++;
+  }
   for (const relative of manifest.protectedPaths) {
+    if(integratedHtml && relative==='index.html')continue;
     await compareTrees(child(privateDir, relative), child(siteDir, relative),
       relative, counters, 'protected');
   }

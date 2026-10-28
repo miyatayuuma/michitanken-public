@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {clone as cloneSkinned} from 'three/addons/utils/SkeletonUtils.js';
 import {terrainMeshHeight} from '../lib/geo.mjs';
-import {waterSurfaceElevationAt} from '../lib/water-field.mjs';
+import {waterSurfaceElevationAt} from '../lib/wildlife-water.mjs';
 import {surfaceWaterHeight} from '../lib/surface-mesh.mjs';
 
 // Kenney Cube Pets bee and Gobkit duck: both CC0, sources recorded in PRIVATE.
