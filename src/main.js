@@ -745,8 +745,10 @@ async function main(){
   if(!fieldResponse.ok)throw Error(`デモ地形データがありません (HTTP ${fieldResponse.status})`);
   const [manifest,field]=await Promise.all([manifestResponse.json(),fieldResponse.json()]);
   validateField(field);validateManifest(manifest);
-  if(siteConfigResponse.ok)applySiteConfig(await siteConfigResponse.json());
-  else if(siteConfigResponse.status!==404||document.documentElement.hasAttribute('data-site-config-required')) {
+  const requiredSiteConfig=document.documentElement.hasAttribute('data-site-config-required');
+  const configIsJson=siteConfigResponse.ok && (siteConfigResponse.headers.get('content-type')||'').includes('json');
+  if(configIsJson)applySiteConfig(await siteConfigResponse.json());
+  else if(requiredSiteConfig||(!siteConfigResponse.ok&&siteConfigResponse.status!==404)) {
     throw Error('site-config.json がありません (HTTP '+siteConfigResponse.status+')');
   }
   const [roadSupplement,fixedWaterProfiles]=await Promise.all([loadRoadSupplement(manifest,root,fetch),loadWaterProfiles(manifest,root,fetch)]);
