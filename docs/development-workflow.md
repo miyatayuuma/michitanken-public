@@ -73,3 +73,11 @@ Firebase Hosting本番はユーザーがCloud Shellで操作し、FIREBASE_HOSTI
 ## 次の構造改善
 
 現状のPRIVATE index.html、lib/field.mjs、lib/water-field.mjsは保護された実行コードである。ここがPUBLICのAPI変更を妨げる。次の独立した改善PRでは、PUBLICがHTMLと汎用ライブラリを所有し、PRIVATEはスキーマ検証済みの実地理・アセット・設定のみを提供する方式へ段階的に移す。既存データの移管やPUBLICへの漏出は行わない。
+
+## リリーススクリプトの入力固定（本Draft内の変更）
+
+Cloud Shellのリリース手順は、PUBLIC・PRIVATE・DreamCoreの**3つの40桁SHAを明示的に受け取る**。moving mainを使わない。指定SHAのtarballを取得し、作業領域にsource-refs.txtとして記録する。
+
+公開スクリプトは通常、事前準備・照合で停止する。Firebase実行には追加の--deploy引数が必要。通信エラーからの復帰は表示された一時作業ディレクトリを明示してresumeスクリプトを実行する方式とし、固定された/tmpパスに依存しない。
+
+この変更は公開処理の**安全設計の改善**であり、実Firebase・Cloud Shell統合・実データ受入は未実施。実際の公開前に別途検証する。
