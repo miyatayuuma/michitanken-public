@@ -21,4 +21,5 @@ for(let row=0;row<5;row++)for(let col=0;col<5;col++){
 }
 for(const p of pois.points){p.position[1]=20;if(p.category==='shrine')p.name='架空の神社';}
 await write('public/data/tiles.json',manifest);await write('public/data/pois.json',pois);
+await write('public/data/site-config.json',await read('public/data/site-config.json'));
 await write('public/data/biomes.json',await generate(root));console.log('Fictional 25-tile fixture created');
