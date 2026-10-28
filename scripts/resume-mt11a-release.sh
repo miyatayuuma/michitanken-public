@@ -16,7 +16,7 @@ export MT11A_TOKEN="$(gcloud auth print-access-token)"
 python3 "$work/public/scripts/release-mt11a-guard.py" unchanged
 cat "$work/restore.txt"
 original="$work/dream/public-before-live-copy"
-if [ ! -e "$original" ]; then
+if [ ! -e "$original" ] && ! python3 "$work/public/scripts/release-mt11a-guard.py" compare; then
  staged="$(mktemp -d "$work/live-public.XXXXXXXX")"
  export MT11A_STAGE="$staged"
  python3 <<'PY'
