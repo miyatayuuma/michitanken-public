@@ -3,15 +3,8 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { integrateGameHtml } from './production-html.mjs';
-
-function safeRelative(value) {
-  if (typeof value !== 'string' || !value || value.includes('\\') || value.includes('\0') ||
-      value.startsWith('/') || path.posix.normalize(value) !== value ||
-      value.split('/').some(x => !x || x === '..' || x === '.' || x === '.git' || x === 'node_modules')) {
-    throw new Error('Unsafe manifest path');
-  }
-  return value;
-}
+import { validateSyncManifest, isProtected } from './sync-manifest.mjs';
+import { validateSiteConfig } from '../lib/site-config.mjs';
 
 async function directory(root) {
   const stat = await fs.lstat(root);
@@ -76,17 +69,14 @@ export async function verifyProductionOverlay({ privateRoot, publicRoot, siteRoo
   if (new Set([privateDir, publicDir, siteDir]).size !== 3) {
     throw new Error('Private, public and site directories must be distinct');
   }
-  const manifest = JSON.parse(await fs.readFile(path.join(privateDir, 'production-public-sync.json'), 'utf8'));
-  if (manifest.schemaVersion !== 1 ||
-      !Array.isArray(manifest.protectedPaths) || !Array.isArray(manifest.publicPaths) ||
-      !Array.isArray(manifest.privatePaths)) {
-    throw new Error('Invalid production sync manifest');
-  }
-  for (const group of ['privatePaths', 'publicPaths', 'protectedPaths']) {
-    manifest[group] = manifest[group].map(safeRelative);
+  const manifest = validateSyncManifest(
+    JSON.parse(await fs.readFile(path.join(privateDir, 'production-public-sync.json'), 'utf8'))
+  );
+  if (manifest.schemaVersion === 2) {
+    validateSiteConfig(JSON.parse(await fs.readFile(path.join(privateDir, 'public/data/site-config.json'), 'utf8')));
   }
   const counters = { protected: 0, public: 0 };
-  const integratedHtml = manifest.protectedPaths.includes('index.html') && manifest.publicPaths.includes('src') && manifest.publicPaths.includes('lib');
+  const integratedHtml = manifest.schemaVersion === 1 && manifest.protectedPaths.includes('index.html') && manifest.publicPaths.includes('src') && manifest.publicPaths.includes('lib');
   if(integratedHtml){
     const expected=integrateGameHtml(await fs.readFile(path.join(privateDir,'index.html'),'utf8'),await fs.readFile(path.join(publicDir,'index.html'),'utf8'));
     if((await fs.readFile(path.join(siteDir,'index.html'),'utf8'))!==expected)throw Error('Integrated game HTML mismatch');
@@ -97,15 +87,13 @@ export async function verifyProductionOverlay({ privateRoot, publicRoot, siteRoo
     await compareTrees(child(privateDir, relative), child(siteDir, relative),
       relative, counters, 'protected');
   }
-  const isProtected = relative => manifest.protectedPaths.some(
-    item => relative === item || relative.startsWith(item + '/')
-  );
+
   for (const relative of manifest.publicPaths) {
-    if (isProtected(relative)) throw new Error('Public path overlaps protected path: ' + relative);
+    if (isProtected(relative, manifest)) throw new Error('Public path overlaps protected path: ' + relative);
     await compareTrees(child(publicDir, relative), child(siteDir, relative),
-      relative, counters, 'public', isProtected);
+      relative, counters, 'public', value => isProtected(value, manifest));
   }
-  return { status: 'PASS', protectedFiles: counters.protected, publicCodeFiles: counters.public };
+  return { status: 'PASS', schemaVersion: manifest.schemaVersion, protectedFiles: counters.protected, publicCodeFiles: counters.public };
 }
 
 async function main(args) {
