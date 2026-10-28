@@ -93,7 +93,10 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
   menu.append(section);
  }
  function dispose(){closed=true;generation++;stopDialogue();for(const id of [...live.keys()])release(id);panel.remove();void imageStore.close().catch(()=>{});}
- return {update,interactAt,interactNearest,advance,close:stopDialogue,installSettings,dispose,targets(){const rect=container.getBoundingClientRect();return [...live.values()].flatMap(v=>v.members.map(m=>{const p=m.sprite.position.clone();p.y+=m.sprite.scale.y/2;p.project(camera);return {id:m.id,x:rect.left+(p.x+1)*rect.width/2,y:rect.top+(1-p.y)*rect.height/2};}));},get talking(){return !!dialogue.current;},get visibleCount(){return [...live.values()].reduce((n,v)=>n+v.members.length,0);}};
+ return {update,interactAt,interactNearest,advance,close:stopDialogue,installSettings,dispose,targets(){const rect=container.getBoundingClientRect();return [...live.values()].flatMap(v=>v.members.map(m=>{const p=m.sprite.position.clone();p.y+=m.sprite.scale.y/2;p.project(camera);return {id:m.id,x:rect.left+(p.x+1)*rect.width/2,y:rect.top+(1-p.y)*rect.height/2};}));},get talking(){return !!dialogue.current;},snapshot(){return [...live.values()].map(v=>({groupId:v.group.groupId,
+  visuals:v.members.map(m=>({id:m.id,x:m.sprite.position.x,z:m.sprite.position.z,frame:m.animation?.frame??0,frames:m.animation?.frames??1})),
+  talking:dialogue.current?.groupId===v.group.groupId}));},
+ get visibleCount(){return [...live.values()].reduce((n,v)=>n+v.members.length,0);}};
 }
 
 
