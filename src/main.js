@@ -29,6 +29,7 @@ import {createExploration} from './exploration.js';
 import {loadPlayerSprite} from './player-sprite.js';
 import {createNpcSystem} from './npc.js';
 import {KIKI_JIJI_DIALOGUES} from '../lib/npc.mjs';
+import {BOOK_GROUP_BY_ID} from '../lib/book-characters.mjs';
 import {renderedFootHeight} from '../lib/avatar-ground.mjs';
 import './style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.createElement('aside');
@@ -391,7 +392,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  container.dataset.avatarKind=playerSprite?'sprite':'model';
  // Optional host configuration keeps real-world locations out of PUBLIC source.
  let npcGroups=[];
- try{const response=await fetch(import.meta.env.BASE_URL+'data/npcs.json',{cache:'no-store'});if(response.ok&&response.headers.get('content-type')?.includes('json')){const config=await response.json();if(config.schema===1&&Array.isArray(config.groups))npcGroups=config.groups.map(g=>({...g,dialogues:g.dialogues||(g.dialogueId==='kiki-jiji'?KIKI_JIJI_DIALOGUES:undefined)}));}}catch(error){console.warn('NPC configuration unavailable',error);}
+ try{const response=await fetch(import.meta.env.BASE_URL+'data/npcs.json',{cache:'no-store'});if(response.ok&&response.headers.get('content-type')?.includes('json')){const config=await response.json();if(config.schema===1&&Array.isArray(config.groups))npcGroups=config.groups.map(g=>({...g,dialogues:g.dialogues||BOOK_GROUP_BY_ID[g.dialogueId||g.groupId]?.dialogues||(g.dialogueId==='kiki-jiji'?KIKI_JIJI_DIALOGUES:undefined)}));}}catch(error){console.warn('NPC configuration unavailable',error);}
  if(new URLSearchParams(location.search).get('npcDemo')==='1'&&npcGroups.length===0){
    // Development fixture, relative to the fictional initial spawn. Never used by default.
    npcGroups=[{groupId:'kiki-jiji',spawnAnchor:[spawn.x-5*Math.sin(spawn.yaw),spawn.z-5*Math.cos(spawn.yaw)],spawnRadius:0,interactionRadius:7,displayRadius:65,movementMode:'fixed',members:[{id:'kiki',offset:[-1.4*Math.cos(spawn.yaw),1.4*Math.sin(spawn.yaw)],height:1.65},{id:'jiji',offset:[1.4*Math.cos(spawn.yaw),-1.4*Math.sin(spawn.yaw)],height:.7}],dialogues:KIKI_JIJI_DIALOGUES}];
@@ -760,3 +761,4 @@ async function main(){
  }
 }
 main();
+
