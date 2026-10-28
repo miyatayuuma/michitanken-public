@@ -451,7 +451,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
      console.warn('NPC provisional placement unavailable; rejected candidate counts:',JSON.stringify(rejected));
    }
  }
- let npc=null;try{npc=createNpcSystem({scene,container,groups:npcGroups,ground:(x,z)=>terrainHeight(world,x,z),blocked:(x,z)=>!!collisionReason(world,x,z,.38),camera});npc.installSettings(document.querySelector('#notebook-menu'));}catch(error){console.warn('NPC disabled:',error);container.dataset.npcError='true';}
+ let npc=null;try{npc=createNpcSystem({scene,container,groups:npcGroups,ground:(x,z)=>terrainHeight(world,x,z),blocked:(x,z)=>!!collisionReason(world,x,z,.38),camera,onMeet:g=>map2d?.recordNpcMeet(g)});npc.installSettings(document.querySelector('#notebook-menu'));}catch(error){console.warn('NPC disabled:',error);container.dataset.npcError='true';}
  const controls={target:new THREE.Vector3(),update(){},dispose(){}};
  controls.enableDamping=true;controls.dampingFactor=.07;
  controls.maxPolarAngle=Math.PI/2.05;controls.minDistance=15;controls.maxDistance=9000;
@@ -718,7 +718,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    }
  }
  try{const response=await fetch(import.meta.env.BASE_URL+'data/warps.json');if(response.ok)warpRegistry=createWarpRegistry(await response.json(),poiRegistry,manifest);}catch(e){console.warn('Warp registry disabled',e);}
- try{map2d=await createExplorationMap({container,registry:poiRegistry||{points:[]},baseURL:import.meta.env.BASE_URL,warps:warpRegistry,onWarp:async id=>{const result=await warpController.warp(id);if(!result.ok)map2d?.failure();},onDiscover:p=>{const unlocked=canWarp(warpRegistry,map2d?.store||{has:()=>true},p.id);landmarkFX.discover(p,unlocked);sound.se(unlocked?'unlock':'discover');},onSelect:()=>sound.se('confirm')});map2d.update(playerState.x,playerState.z,0);modeButton.disabled=false;}catch(e){modeButton.disabled=true;container.dataset.mapError='true';console.warn(e);}
+ try{map2d=await createExplorationMap({container,registry:poiRegistry||{points:[]},baseURL:import.meta.env.BASE_URL,warps:warpRegistry,npcGroups,onWarp:async id=>{const result=await warpController.warp(id);if(!result.ok)map2d?.failure();},onDiscover:p=>{const unlocked=canWarp(warpRegistry,map2d?.store||{has:()=>true},p.id);landmarkFX.discover(p,unlocked);sound.se(unlocked?'unlock':'discover');},onSelect:()=>sound.se('confirm')});map2d.update(playerState.x,playerState.z,0);modeButton.disabled=false;}catch(e){modeButton.disabled=true;container.dataset.mapError='true';console.warn(e);}
  container.dataset.appReady='true';
  reportStreaming(streamer.snapshot());
  draw();
