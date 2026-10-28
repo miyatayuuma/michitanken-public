@@ -395,6 +395,58 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    // Development fixture, relative to the fictional initial spawn. Never used by default.
    npcGroups=[{groupId:'kiki-jiji',spawnAnchor:[spawn.x-5*Math.sin(spawn.yaw),spawn.z-5*Math.cos(spawn.yaw)],spawnRadius:0,interactionRadius:7,displayRadius:65,movementMode:'fixed',members:[{id:'kiki',offset:[-1.4*Math.cos(spawn.yaw),1.4*Math.sin(spawn.yaw)],height:1.65},{id:'jiji',offset:[1.4*Math.cos(spawn.yaw),-1.4*Math.sin(spawn.yaw)],height:.7}],dialogues:KIKI_JIJI_DIALOGUES}];
  }
+ // When the host has not supplied a location, derive a provisional pair near
+ // the initial spawn. Never store the resulting coordinates in public source.
+ if(npcGroups.length===0){
+   const roadClear=(x,z,r)=>{
+     for(const {entry,field} of world.tileWorlds.values()){
+       for(const road of field.osm.roads){
+         if(road.tunnel)continue;
+         for(let i=1;i<road.points.length;i++){
+           const a=road.points[i-1],b=road.points[i];
+           const ax=a[0]+entry.offset[0],az=a[1]+entry.offset[1];
+           const dx=b[0]-a[0],dz=b[1]-a[1],den=dx*dx+dz*dz;
+           const t=den?Math.max(0,Math.min(1,((x-ax)*dx+(z-az)*dz)/den)):0;
+           if(Math.hypot(x-ax-t*dx,z-az-t*dz)<(road.width||4)/2+r)return false;
+         }
+       }
+     }
+     return true;
+   };
+   const side=[Math.cos(spawn.yaw),-Math.sin(spawn.yaw)];
+   const offsets=[[-1.4*side[0],-1.4*side[1]],[1.4*side[0],1.4*side[1]]];
+   let chosen=null;
+   // Prefer positions in front of the initial camera; progressively widen search.
+   for(const distance of [6,8,10,12,16,20,25]){
+     for(const angle of [0,.25,-.25,.5,-.5,.8,-.8,1.2,-1.2,Math.PI]){
+       const x=spawn.x-distance*Math.sin(spawn.yaw+angle);
+       const z=spawn.z-distance*Math.cos(spawn.yaw+angle);
+       const memberPositions=offsets.map(([dx,dz])=>[x+dx,z+dz]);
+       let valid=true;
+       for(const [mx,mz] of memberPositions){
+         try{
+           if(!roadClear(mx,mz,1)||collisionReason(world,mx,mz,1)){valid=false;break;}
+           const y=terrainHeight(world,mx,mz)+world.baseElevation;
+           if(!validateLanding(world,{confirmed:true,gameSafety:'GAME_SAFE_CONFIRMED',clearance:1.5,position:[mx,y,mz],yaw:spawn.yaw}).ok){valid=false;break;}
+         }catch{valid=false;break;}
+       }
+       if(!valid)continue;
+       // Keep the center reachable from the start in the loaded game geometry.
+       for(let t=.1;t<=1.001;t+=.1){
+         if(collisionReason(world,spawn.x+(x-spawn.x)*t,spawn.z+(z-spawn.z)*t,.7)){valid=false;break;}
+       }
+       if(valid){chosen=[x,z];break;}
+     }
+     if(chosen)break;
+   }
+   if(chosen){
+     npcGroups=[{groupId:'kiki-jiji',spawnAnchor:chosen,spawnRadius:0,interactionRadius:7,displayRadius:65,movementMode:'fixed',members:[{id:'kiki',offset:offsets[0],height:1.65},{id:'jiji',offset:offsets[1],height:.7}],dialogues:KIKI_JIJI_DIALOGUES}];
+     container.dataset.npcPlacement='provisional';
+   }else{
+     container.dataset.npcPlacement='unavailable';
+     console.warn('NPC provisional placement unavailable: no suitable loaded candidate');
+   }
+ }
  let npc=null;try{npc=createNpcSystem({scene,container,groups:npcGroups,ground:(x,z)=>terrainHeight(world,x,z),camera});npc.installSettings(document.querySelector('#notebook-menu'));}catch(error){console.warn('NPC disabled:',error);container.dataset.npcError='true';}
  const controls={target:new THREE.Vector3(),update(){},dispose(){}};
  controls.enableDamping=true;controls.dampingFactor=.07;
