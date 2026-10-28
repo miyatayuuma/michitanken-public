@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
-work=/tmp/mt11a-r2.g0OZpyXm
-expected="${1:?PR head required}"
+work="${1:?Previous release workspace path required}"
+expected="${2:?PUBLIC PR head required}"
+DEPLOY_FLAG="${3:-}"
+case "$work" in /*) ;; *) echo 'ERROR: workspace must be an absolute path'; exit 1;; esac
+[ -z "$DEPLOY_FLAG" ] || [ "$DEPLOY_FLAG" = "--deploy" ] || { echo 'ERROR: third argument must be --deploy'; exit 1; }
 repo=miyatayuuma/michitanken-public
-test -f "$work/live.json" && test -f "$work/restore.txt" && test -d "$work/dream/public/games/michitanken" || { echo 'ERROR: previous build workspace unavailable'; exit 1; }
+test -f "$work/live.json" && test -f "$work/restore.txt" && test -f "$work/source-refs.txt" && test -d "$work/dream/public/games/michitanken" || { echo 'ERROR: previous build workspace unavailable'; exit 1; }
+grep -Fx "PUBLIC=$expected" "$work/source-refs.txt" >/dev/null || { echo 'ERROR: PUBLIC SHA differs from saved build'; exit 1; }
 actual=$(gh pr view 26 --repo "$repo" --json headRefOid --jq .headRefOid)
 test "$actual" = "$expected" || { echo "ERROR: PR HEAD changed: $actual"; exit 1; }
 export MT11A_WORK="$work"
@@ -12,7 +16,7 @@ export MT11A_TOKEN="$(gcloud auth print-access-token)"
 python3 "$work/public/scripts/release-mt11a-guard.py" unchanged
 cat "$work/restore.txt"
 original="$work/dream/public-before-live-copy"
-if [ ! -e "$original" ]; then
+if [ ! -e "$original" ] && ! python3 "$work/public/scripts/release-mt11a-guard.py" compare; then
  staged="$(mktemp -d "$work/live-public.XXXXXXXX")"
  export MT11A_STAGE="$staged"
  python3 <<'PY'
@@ -57,6 +61,11 @@ python3 "$work/public/scripts/release-mt11a-guard.py" boot
 export MT11A_TOKEN="$(gcloud auth print-access-token)"
 python3 "$work/public/scripts/release-mt11a-guard.py" unchanged
 unset MT11A_TOKEN
+if [ "$DEPLOY_FLAG" != "--deploy" ]; then
+ echo 'Release resume preflight complete; Firebase was NOT deployed.'
+ echo "To deploy this verified workspace: bash $work/public/scripts/resume-mt11a-release.sh $work $expected --deploy"
+ exit 0
+fi
 echo 'Starting Firebase Hosting deployment.'
 FIREBASE_HOSTING_UPLOAD_CONCURRENCY=4 firebase deploy --only hosting --project mygames-cb525
 echo 'Deploy complete; checking live HTTP responses.'
