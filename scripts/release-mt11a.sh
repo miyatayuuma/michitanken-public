@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# MT-11A-R2: production release. Stops before deployment on any failed guard.
+set -Eeuo pipefail
+umask 077
+EXPECTED_HEAD="${1:?Expected PUBLIC PR HEAD is required}"
+project=mygames-cb525
+for cmd in gh git node npm python3 firebase gcloud curl tar; do
+ command -v "$cmd" >/dev/null || { echo "Missing command: $cmd"; exit 1; }
+done
+tmpbase="${TMPDIR:-/tmp}"
+avail=$(df -Pk "$tmpbase" | awk 'NR==2 {print $4}')
+[ "$avail" -ge 1048576 ] || { echo 'ERROR: need at least 1 GiB free in TMPDIR.'; exit 1; }
+work=$(mktemp -d "$tmpbase/mt11a-r2.XXXXXXXX")
+echo "Release workspace: $work"
+mkdir "$work/public" "$work/private" "$work/dream"
+prhead=$(gh pr view 26 --repo miyatayuuma/michitanken-public --json headRefOid --jq .headRefOid)
+[ "$prhead" = "$EXPECTED_HEAD" ] || { echo "ERROR: PR head changed: $prhead"; exit 1; }
+# Stream archives rather than cloning histories or changing existing checkouts.
+gh api "repos/miyatayuuma/michitanken-public/tarball/$EXPECTED_HEAD" | tar -xz --strip-components=1 -C "$work/public"
+gh api repos/miyatayuuma/michitanken/tarball/main | tar -xz --strip-components=1 -C "$work/private"
+gh api repos/miyatayuuma/dreamcore-games/tarball/main | tar -xz --strip-components=1 -C "$work/dream"
+export MT11A_WORK="$work"
+export MT11A_TOKEN="$(gcloud auth print-access-token)"
+python3 "$work/public/scripts/release-mt11a-guard.py" snapshot
+unset MT11A_TOKEN
+node "$work/public/scripts/assemble-production.mjs" --private "$work/private" --public "$work/public" --out "$work/site"
+node "$work/public/scripts/verify-production-overlay.mjs" --private "$work/private" --public "$work/public" --site "$work/site"
+cd "$work/site"
+npm install --no-audit --no-fund
+npm run build -- --base=/games/michitanken/
+python3 "$work/public/scripts/release-mt11a-guard.py" integrate
+export MT11A_TOKEN="$(gcloud auth print-access-token)"
+python3 "$work/public/scripts/release-mt11a-guard.py" compare
+unset MT11A_TOKEN
+browser=''
+for candidate in chromium chromium-browser google-chrome google-chrome-stable; do
+ if command -v "$candidate" >/dev/null; then browser=$(command -v "$candidate"); break; fi
+done
+[ -n "$browser" ] || { echo 'ERROR: Chromium is required for the game startup check; no deployment occurred.'; exit 1; }
+cd "$work/dream"
+python3 -m http.server 18765 --bind 127.0.0.1 --directory public >"$work/http.log" 2>&1 &
+server=$!
+trap 'kill "$server" 2>/dev/null || true' EXIT
+"$browser" --headless --no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --virtual-time-budget=60000 --dump-dom http://127.0.0.1:18765/games/michitanken/ >"$work/dom.html" 2>"$work/browser.log"
+python3 "$work/public/scripts/release-mt11a-guard.py" boot
+export MT11A_TOKEN="$(gcloud auth print-access-token)"
+python3 "$work/public/scripts/release-mt11a-guard.py" unchanged
+unset MT11A_TOKEN
+echo 'Starting Firebase Hosting deployment.'
+FIREBASE_HOSTING_UPLOAD_CONCURRENCY=4 firebase deploy --only hosting --project "$project"
+echo 'Firebase deploy completed; checking live HTTP responses.'
+python3 "$work/public/scripts/release-mt11a-guard.py" online
+echo "Deployment completed. Restore details: $work/restore.txt"
+cat "$work/restore.txt"
+echo 'URL: https://mygames-cb525.web.app/play.html?game=michitanken'
