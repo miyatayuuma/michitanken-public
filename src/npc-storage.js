@@ -14,7 +14,7 @@ export function createNpcImageStore(indexedDB=globalThis.indexedDB){
    const tx=db.transaction(STORE,'readwrite');const store=tx.objectStore(STORE);
    tx.oncomplete=()=>resolve(records.length);
    tx.onabort=tx.onerror=()=>reject(tx.error||Error('画像ZIPを保存できませんでした'));
-   try{for(const r of records)store.put({blob:r.blob,rect:r.rect,width:r.width,height:r.height},r.id);}
+   try{for(const r of records)store.put({blob:r.blob,rect:r.rect,width:r.width,height:r.height,columns:r.columns,rows:r.rows},r.id);}
    catch(error){try{tx.abort();}catch{}reject(error);}
   });
  }

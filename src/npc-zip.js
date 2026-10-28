@@ -56,8 +56,10 @@ const webp=b=>b.length>=12&&String.fromCharCode(...b.subarray(0,4))==='RIFF'&&St
 function rectangle(w,h,config){
  const columns=config.columns??1,rows=config.rows??1,frame=config.frame??0;
  if(!Number.isInteger(columns)||!Number.isInteger(rows)||columns<1||rows<1||columns*rows>256||
-    !Number.isInteger(frame)||frame<0||frame>=columns*rows||w%columns||h%rows)fail('スプライト分割設定が画像に合いません');
- return {x:frame%columns*(w/columns),y:Math.floor(frame/columns)*(h/rows),width:w/columns,height:h/rows};
+    !Number.isInteger(frame)||frame<0||frame>=columns*rows||columns>w||rows>h)fail('スプライト分割設定が画像に合いません');
+ const col=frame%columns,row=Math.floor(frame/columns);
+ const x=Math.round(col*w/columns),y=Math.round(row*h/rows);
+ return {x,y,width:Math.round((col+1)*w/columns)-x,height:Math.round((row+1)*h/rows)-y};
 }
 export async function prepareNpcZip(blob,requiredIds,decodeImage=globalThis.createImageBitmap){
  if(typeof decodeImage!=='function')fail('この端末では画像を読み取れません');
@@ -70,7 +72,7 @@ export async function prepareNpcZip(blob,requiredIds,decodeImage=globalThis.crea
  }
  const records=[];
  for(const id of requiredIds){
-  const spec=members?members[id]:{};
+  const spec=members?members[id]:{columns:4,rows:2};
   if(!spec||typeof spec!=='object'||Array.isArray(spec))fail(id+' の設定が不正です');
   const matches=zip.names.filter(n=>n===id+'.png'||n===id+'.webp');
   const filename=spec.file??(matches.length===1?matches[0]:null);
@@ -83,7 +85,7 @@ export async function prepareNpcZip(blob,requiredIds,decodeImage=globalThis.crea
    bitmap=await decodeImage(image);
    const {width,height}=bitmap;
    if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width*height>MAX_PIXELS)fail(id+' の画像が大きすぎます');
-   records.push({id,blob:image,width,height,rect:rectangle(width,height,spec)});
+   records.push({id,blob:image,width,height,rect:rectangle(width,height,spec),columns:spec.columns??1,rows:spec.rows??1});
   }catch(e){if(String(e?.message).startsWith('画像ZIP:'))throw e;fail(id+' の画像を開けません');}
   finally{bitmap?.close?.();}
  }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {deflateRawSync} from 'node:zlib';
 import {prepareNpcZip,readNpcZip} from '../src/npc-zip.js';
 
-const IDS=['king','cat','kiki','jiji','skipper','twin-1','twin-2','zorori','ishishi','noshishi'];
+const IDS=['king','cat','kiki','jiji','skipper','twins','zorori','ishishi','noshishi'];
 const PNG=Buffer.from([137,80,78,71,13,10,26,10,1,2,3,4]);
 const table=Array.from({length:256},(_,i)=>{let c=i;for(let j=0;j<8;j++)c=c&1?0xedb88320^(c>>>1):c>>>1;return c>>>0;});
 const crc=b=>{let c=0xffffffff;for(const v of b)c=table[(c^v)&255]^(c>>>8);return(c^0xffffffff)>>>0;};
@@ -24,11 +24,11 @@ function zip(files,method=0){
 }
 const files=()=>Object.fromEntries(IDS.map(id=>[id+'.png',PNG]));
 const bitmap=async()=>({width:160,height:160,close(){}});
-test('plain ZIP with ten named images imports without pixel inputs',async()=>{
+test('plain ZIP with nine named images imports without pixel inputs',async()=>{
  const items=await prepareNpcZip(zip(files()),IDS,bitmap);
- assert.equal(items.length,10);
- assert.deepEqual(items[0].rect,{x:0,y:0,width:160,height:160});
- assert.equal(items[9].id,'noshishi');
+ assert.equal(items.length,9);
+ assert.deepEqual(items[0].rect,{x:0,y:0,width:40,height:80});
+ assert.equal(items[8].id,'noshishi');
 });
 test('manifest uses grid dimensions and auto-selects first frame',async()=>{
  const entries=files(),members=Object.fromEntries(IDS.map(id=>[id,{file:id+'.png',columns:4,rows:4,frame:id==='kiki'?5:0}]));
@@ -38,13 +38,13 @@ test('manifest uses grid dimensions and auto-selects first frame',async()=>{
 });
 test('common deflate ZIP is supported',async()=>{
  const prepared=await prepareNpcZip(zip(files(),8),IDS,bitmap);
- assert.equal(prepared.length,10);
+ assert.equal(prepared.length,9);
 });
 test('missing member, invalid grid and traversal paths are rejected',async()=>{
  const broken=files();delete broken['jiji.png'];
  await assert.rejects(prepareNpcZip(zip(broken),IDS,bitmap),/jiji/);
  const entries=files(),members=Object.fromEntries(IDS.map(id=>[id,{file:id+'.png'}]));
- members.kiki={file:'kiki.png',columns:3,rows:2,frame:0};
+ members.kiki={file:'kiki.png',columns:300,rows:2,frame:0};
  entries['npc-images.json']=Buffer.from(JSON.stringify({schema:1,members}));
  await assert.rejects(prepareNpcZip(zip(entries),IDS,bitmap),/分割/);
  await assert.rejects(readNpcZip(zip({'../king.png':PNG})),/ファイル名/);
@@ -56,4 +56,10 @@ test('corrupted PNG bytes and ZIP checksums reject import',async()=>{
  // Flip first local file payload after its 30-byte header and filename.
  buffer[30+'king.png'.length+9]^=1;
  await assert.rejects(prepareNpcZip(new Blob([buffer]),IDS,bitmap),/チェックサム/);
+});
+
+test('rounds uneven 1774 by 887 grid boundaries without distortion',async()=>{
+ const items=await prepareNpcZip(zip(files()),IDS,async()=>({width:1774,height:887,close(){}}));
+ assert.deepEqual(items[0].rect,{x:0,y:0,width:444,height:444});
+ assert.equal(items[0].columns,4);assert.equal(items[0].rows,2);
 });

@@ -15,16 +15,30 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
  const stopDialogue=()=>{dialogue.close();showLine();};
  const makeSilhouette=id=>{const c=document.createElement('canvas');c.width=128;c.height=192;const ctx=c.getContext('2d');ctx.fillStyle='#46534c';if(id==='jiji'){ctx.beginPath();ctx.moveTo(24,85);ctx.lineTo(20,42);ctx.lineTo(47,61);ctx.lineTo(80,61);ctx.lineTo(108,42);ctx.lineTo(104,85);ctx.ellipse(64,93,44,40,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(64,151,35,39,0,0,Math.PI*2);ctx.fill();}else{ctx.beginPath();ctx.arc(64,43,31,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.moveTo(40,70);ctx.lineTo(88,70);ctx.lineTo(108,188);ctx.lineTo(20,188);ctx.closePath();ctx.fill();}return c;};
  function canvasTexture(canvas){const t=new THREE.CanvasTexture(canvas);t.colorSpace=THREE.SRGBColorSpace;t.needsUpdate=true;return t;}
- async function textureFor(id){const record=await imageStore.get(id).catch(()=>null);if(!record||!validRect(record.rect,record.width,record.height))return canvasTexture(makeSilhouette(id));let bitmap;try{bitmap=await createImageBitmap(record.blob);if(bitmap.width!==record.width||bitmap.height!==record.height)throw Error('size mismatch');const {x,y,width,height}=record.rect,c=document.createElement('canvas');c.width=width;c.height=height;c.getContext('2d').drawImage(bitmap,x,y,width,height,0,0,width,height);return canvasTexture(c);}catch{return canvasTexture(makeSilhouette(id));}finally{bitmap?.close();}}
- function release(id){const v=live.get(id);if(!v)return;live.delete(id);v.cancelled=true;for(const m of v.members){scene.remove(m.sprite);m.sprite.material.map?.dispose();m.sprite.material.dispose();}}
+ async function textureFor(id){
+  const record=await imageStore.get(id).catch(()=>null);
+  if(!record||!validRect(record.rect,record.width,record.height))return {texture:canvasTexture(makeSilhouette(id))};
+  let bitmap;try{
+   bitmap=await createImageBitmap(record.blob);if(bitmap.width!==record.width||bitmap.height!==record.height)throw Error('size mismatch');
+   const columns=record.columns||1,rows=record.rows||1;
+   const canvas=document.createElement('canvas');canvas.width=Math.ceil(bitmap.width/columns);canvas.height=Math.ceil(bitmap.height/rows);
+   const texture=canvasTexture(canvas);
+   function draw(frame){const col=frame%columns,row=Math.floor(frame/columns),x=Math.round(col*bitmap.width/columns),y=Math.round(row*bitmap.height/rows),w=Math.round((col+1)*bitmap.width/columns)-x,h=Math.round((row+1)*bitmap.height/rows)-y;const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,x,y,w,h,Math.floor((canvas.width-w)/2),canvas.height-h,w,h);texture.needsUpdate=true;}
+   if(columns===1&&rows===1){const r=record.rect;canvas.width=r.width;canvas.height=r.height;canvas.getContext('2d').drawImage(bitmap,r.x,r.y,r.width,r.height,0,0,r.width,r.height);texture.needsUpdate=true;bitmap.close();return {texture};}
+   draw(0);return {texture,bitmap,draw,frames:columns*rows,frame:0,time:0};
+  }catch{bitmap?.close();return {texture:canvasTexture(makeSilhouette(id))};}
+ }
+ function release(id){const v=live.get(id);if(!v)return;live.delete(id);v.cancelled=true;for(const m of v.members){scene.remove(m.sprite);m.sprite.material.map?.dispose();m.animation?.bitmap?.close();m.sprite.material.dispose();}}
  async function mount(g){if(live.has(g.groupId)||closed)return;const v={group:g,members:[],cancelled:false,x:g.spawnAnchor[0],z:g.spawnAnchor[1],target:null,wait:1+Math.random()*3};live.set(g.groupId,v);const token=generation;
-  for(const m of g.members){let y;try{y=ground(g.spawnAnchor[0]+m.offset[0],g.spawnAnchor[1]+m.offset[1]);}catch{release(g.groupId);return;}if(!Number.isFinite(y)){release(g.groupId);return;}
-   const tex=await textureFor(m.id);if(closed||v.cancelled||token!==generation){tex.dispose();return;}const material=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:.05,depthTest:true,depthWrite:true});const sprite=new THREE.Sprite(material);const aspect=tex.image.width/tex.image.height;sprite.scale.set(Math.min(m.height*aspect,m.height*1.5),m.height,1);sprite.center.set(.5,0);sprite.position.set(g.spawnAnchor[0]+m.offset[0],y,g.spawnAnchor[1]+m.offset[1]);sprite.name='npc-'+m.id;sprite.visible=false;scene.add(sprite);v.members.push({id:m.id,sprite,offset:m.offset,speed:.65+Math.random()*.12});
+  const visualMembers=g.groupId==='twins'?[{...g.members[0],id:'twins',offset:[0,0]}]:g.members;v.visualCount=visualMembers.length;
+  for(const m of visualMembers){let y;try{y=ground(g.spawnAnchor[0]+m.offset[0],g.spawnAnchor[1]+m.offset[1]);}catch{release(g.groupId);return;}if(!Number.isFinite(y)){release(g.groupId);return;}
+   const animation=await textureFor(m.id),tex=animation.texture;if(closed||v.cancelled||token!==generation){tex.dispose();animation.bitmap?.close();return;}const material=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:.05,depthTest:true,depthWrite:true});const sprite=new THREE.Sprite(material);const aspect=tex.image.width/tex.image.height;sprite.scale.set(m.height*aspect,m.height,1);sprite.center.set(.5,0);sprite.position.set(g.spawnAnchor[0]+m.offset[0],y,g.spawnAnchor[1]+m.offset[1]);sprite.name='npc-'+m.id;sprite.visible=false;scene.add(sprite);v.members.push({id:m.id,sprite,animation,offset:m.offset,speed:.65+Math.random()*.12});
   }
   for(const member of v.members)member.sprite.visible=true;
  }
  function move(v,dt){
-  if(v.members.length!==v.group.members.length||dialogue.current?.groupId===v.group.groupId)return;
+  if(v.members.length!==v.visualCount)return false;
+  if(dialogue.current?.groupId===v.group.groupId)return false;
   const g=v.group,step=Math.min(Math.max(dt,0),.1);
   if(v.wait>0){v.wait-=step;return;}
   if(!v.target){
@@ -49,40 +63,34 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
   }
   v.x=nx;v.z=nz;
   for(const [position,x,y,z] of proposed)position.set(x,y,z);
+  return travel>0;
  }
- function update({dt,playerX,playerZ,currentMode,occlusion=()=>[]}){px=playerX;pz=playerZ;mode=currentMode;occluders=occlusion;dialogue.observe(groups,px,pz);if(mode!=='walk'&&dialogue.current)stopDialogue();if(mode==='walk')for(const v of live.values())move(v,dt);refreshTime+=dt;if(refreshTime<.25)return;refreshTime=0;for(const g of groups){if(groupInRange(g,px,pz,mode))void mount(g);else release(g.groupId);}}
+ function update({dt,playerX,playerZ,currentMode,occlusion=()=>[]}){px=playerX;pz=playerZ;mode=currentMode;occluders=occlusion;dialogue.observe(groups,px,pz);if(mode!=='walk'&&dialogue.current)stopDialogue();for(const v of live.values()){const moving=mode==='walk'&&move(v,dt);for(const m of v.members){const a=m.animation;if(!a?.draw)continue;a.time=moving?a.time+Math.min(Math.max(dt,0),.1):0;const frame=moving?Math.floor(a.time*6)%a.frames:0;if(frame!==a.frame){a.frame=frame;a.draw(frame);}}}refreshTime+=dt;if(refreshTime<.25)return;refreshTime=0;for(const g of groups){if(groupInRange(g,px,pz,mode))void mount(g);else release(g.groupId);}}
  const ray=new THREE.Raycaster();
  function interactAt(clientX,clientY,rect){if(closed||mode!=='walk'||dialogue.current||!rect||rect.width<=0||rect.height<=0)return false;const nx=(clientX-rect.left)/rect.width*2-1,ny=1-(clientY-rect.top)/rect.height*2;if(Math.abs(nx)>1||Math.abs(ny)>1)return false;camera.updateMatrixWorld();ray.setFromCamera(new THREE.Vector2(nx,ny),camera);ray.far=camera.far;
-  const candidates=[];for(const v of live.values()){const g=v.group;if(v.members.length!==g.members.length)continue;for(const m of v.members){if(Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)>g.interactionRadius)continue;m.sprite.updateWorldMatrix(true,false);const hit=ray.intersectObject(m.sprite)[0];if(hit)candidates.push({g,hit});}}
+  const candidates=[];for(const v of live.values()){const g=v.group;if(v.members.length!==v.visualCount)continue;for(const m of v.members){if(Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)>g.interactionRadius)continue;m.sprite.updateWorldMatrix(true,false);const hit=ray.intersectObject(m.sprite)[0];if(hit)candidates.push({g,hit});}}
   candidates.sort((a,b)=>a.hit.distance-b.hit.distance);if(!candidates.length)return false;const candidate=candidates[0];ray.far=Math.max(0,candidate.hit.distance-.01);const obstacles=occluders().filter(o=>o?.visible);for(const o of obstacles)o.updateWorldMatrix(true,true);if(ray.intersectObjects(obstacles,true).length)return false;
   dialogue.start(candidate.g);showLine();return !!dialogue.current;
  }
- function interactNearest(){if(dialogue.current)return advance();const choices=[...live.values()].filter(v=>v.members.length===v.group.members.length&&v.members.some(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)<=v.group.interactionRadius)).sort((a,b)=>Math.min(...a.members.map(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)))-Math.min(...b.members.map(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz))));if(!choices.length)return false;const m=choices[0].members.slice().sort((a,b)=>Math.hypot(a.sprite.position.x-px,a.sprite.position.z-pz)-Math.hypot(b.sprite.position.x-px,b.sprite.position.z-pz))[0].sprite,p=m.position.clone();p.y+=m.scale.y*.5;p.project(camera);const rect=container.getBoundingClientRect();return interactAt(rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2,rect);}
+ function interactNearest(){if(dialogue.current)return advance();const choices=[...live.values()].filter(v=>v.members.length===v.visualCount&&v.members.some(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)<=v.group.interactionRadius)).sort((a,b)=>Math.min(...a.members.map(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)))-Math.min(...b.members.map(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz))));if(!choices.length)return false;const m=choices[0].members.slice().sort((a,b)=>Math.hypot(a.sprite.position.x-px,a.sprite.position.z-pz)-Math.hypot(b.sprite.position.x-px,b.sprite.position.z-pz))[0].sprite,p=m.position.clone();p.y+=m.scale.y*.5;p.project(camera);const rect=container.getBoundingClientRect();return interactAt(rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2,rect);}
  async function refreshImages(){generation++;for(const id of [...live.keys()])release(id);refreshTime=.25;}
- function installSettings(menu){const section=document.createElement('details');section.className='npc-settings';const summary=document.createElement('summary');summary.textContent='登場人物の画像';section.append(summary);const explanation=document.createElement('p');explanation.textContent='10人分の画像をまとめたZIPを1つ選ぶと、この端末だけに登録されます。画像は送信されません。';section.append(explanation);
+ function installSettings(menu){const section=document.createElement('details');section.className='npc-settings';const summary=document.createElement('summary');summary.textContent='登場人物の画像';section.append(summary);const explanation=document.createElement('p');explanation.textContent='9枚の画像をまとめたZIPを1つ選ぶと、この端末だけに登録されます。画像は送信されません。';section.append(explanation);
   const zipLabel=document.createElement('label');zipLabel.textContent='画像ZIPを一括登録';
-  const zipInput=document.createElement('input');zipInput.type='file';zipInput.accept='.zip,application/zip,application/x-zip-compressed';zipInput.setAttribute('aria-label','10人分の画像ZIP');zipLabel.append(zipInput);section.append(zipLabel);
+  const zipInput=document.createElement('input');zipInput.type='file';zipInput.accept='.zip,application/zip,application/x-zip-compressed';zipInput.setAttribute('aria-label','9枚の画像ZIP');zipLabel.append(zipInput);section.append(zipLabel);
   const zipStatus=document.createElement('p');zipStatus.setAttribute('role','status');zipStatus.textContent='ZIPを選択してください';section.append(zipStatus);
   zipInput.onchange=async()=>{
    const file=zipInput.files?.[0];if(!file)return;
    zipInput.disabled=true;zipStatus.textContent='ZIPの画像を確認しています…';
    try{
-    const ids=BOOK_GROUPS.flatMap(g=>g.members.map(([id])=>id));
+    const ids=BOOK_GROUPS.flatMap(g=>g.groupId==='twins'?['twins']:g.members.map(([id])=>id));
     const records=await prepareNpcZip(file,ids);
     await imageStore.putMany(records);
     await refreshImages();
-    zipStatus.textContent=records.length+'人分を登録しました。これで設定完了です。';
+    zipStatus.textContent=records.length+'枚の画像を登録しました';
    }catch(error){zipStatus.textContent=error?.message||'画像ZIPを読み込めませんでした';}
    finally{zipInput.disabled=false;zipInput.value='';}
   };
-  const manual=document.createElement('details');manual.className='npc-settings-manual';
-  const manualTitle=document.createElement('summary');manualTitle.textContent='個別の登録・削除（必要な場合のみ）';manual.append(manualTitle);
-  const manualNote=document.createElement('p');manualNote.textContent='ZIPを使わずに登録する場合だけ、1コマのピクセル範囲を指定します。';manual.append(manualNote);
-
-  for(const [id,label] of BOOK_GROUPS.flatMap(group=>group.members.map(([id,label])=>[id,label]))){const box=document.createElement('fieldset');box.dataset.npcMember=id;const legend=document.createElement('legend');legend.textContent=label;box.append(legend);const input=document.createElement('input');input.type='file';input.accept='image/png,image/webp';input.setAttribute('aria-label',label+'画像');box.append(input);const info=document.createElement('p');info.setAttribute('role','status');info.textContent='画像を選択してください';box.append(info);const fields={};for(const [key,name] of [['x','左'],['y','上'],['width','幅'],['height','高さ']]){const l=document.createElement('label');l.textContent=name;const n=document.createElement('input');n.type='number';n.name=key;n.min='0';n.step='1';n.placeholder='px';l.append(n);box.append(l);fields[key]=n;}
-   let dimensions=null;input.onchange=async()=>{dimensions=null;const f=input.files?.[0];if(!f)return;try{if(!['image/png','image/webp'].includes(f.type)||f.size>12*1024*1024)throw Error('PNG/WebP、12MB以下を選んでください');const b=await createImageBitmap(f);if(b.width*b.height>16777216){b.close();throw Error('画像が大きすぎます');}dimensions={width:b.width,height:b.height};b.close();info.textContent=`画像 ${dimensions.width} × ${dimensions.height} px。1コマを指定してください。`;}catch(e){info.textContent=e.message;}};
-   const save=document.createElement('button');save.type='button';save.textContent='登録';save.onclick=async()=>{try{const f=input.files?.[0],rect=Object.fromEntries(Object.entries(fields).map(([k,v])=>[k,v.value===''?NaN:Number(v.value)]));if(!f||!dimensions)throw Error('画像を選んでください');await imageStore.put(id,f,rect,dimensions.width,dimensions.height);info.textContent='この端末に保存しました';await refreshImages();}catch(e){info.textContent=e.message||'保存できませんでした';}};const remove=document.createElement('button');remove.type='button';remove.textContent='削除';remove.onclick=async()=>{try{await imageStore.delete(id);info.textContent='削除しました';await refreshImages();}catch{info.textContent='削除できませんでした';}};box.append(save,remove);manual.append(box);
-  }section.append(manual);menu.append(section);
+  menu.append(section);
  }
  function dispose(){closed=true;generation++;stopDialogue();for(const id of [...live.keys()])release(id);panel.remove();void imageStore.close().catch(()=>{});}
  return {update,interactAt,interactNearest,advance,close:stopDialogue,installSettings,dispose,targets(){const rect=container.getBoundingClientRect();return [...live.values()].flatMap(v=>v.members.map(m=>{const p=m.sprite.position.clone();p.y+=m.sprite.scale.y/2;p.project(camera);return {id:m.id,x:rect.left+(p.x+1)*rect.width/2,y:rect.top+(1-p.y)*rect.height/2};}));},get talking(){return !!dialogue.current;},get visibleCount(){return [...live.values()].reduce((n,v)=>n+v.members.length,0);}};
