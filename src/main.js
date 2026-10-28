@@ -26,6 +26,8 @@ import {createVegetationRenderer,natureInstanceBudget} from './vegetation.js';
 import {createWildlifeRenderer} from './wildlife.js';
 import {createExploration} from './exploration.js';
 import {loadPlayerSprite} from './player-sprite.js';
+import {createNpcSystem} from './npc.js';
+import {KIKI_JIJI_DIALOGUES} from '../lib/npc.mjs';
 import {renderedFootHeight} from '../lib/avatar-ground.mjs';
 import './style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.createElement('aside');
@@ -386,6 +388,14 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  const playerSprite=await loadPlayerSprite({baseURL:import.meta.env.BASE_URL});
  const avatar=playerSprite?.group||makeAvatar();avatar.traverse(o=>{if(o.isMesh)o.renderOrder=4;});scene.add(avatar);
  container.dataset.avatarKind=playerSprite?'sprite':'model';
+ // Optional host configuration keeps real-world locations out of PUBLIC source.
+ let npcGroups=[];
+ try{const response=await fetch(import.meta.env.BASE_URL+'data/npcs.json',{cache:'no-store'});if(response.ok&&response.headers.get('content-type')?.includes('json')){const config=await response.json();if(config.schema===1&&Array.isArray(config.groups))npcGroups=config.groups.map(g=>({...g,dialogues:g.dialogues||(g.dialogueId==='kiki-jiji'?KIKI_JIJI_DIALOGUES:undefined)}));}}catch(error){console.warn('NPC configuration unavailable',error);}
+ if(new URLSearchParams(location.search).get('npcDemo')==='1'&&npcGroups.length===0){
+   // Development fixture, relative to the fictional initial spawn. Never used by default.
+   npcGroups=[{groupId:'kiki-jiji',spawnAnchor:[spawn.x+5,spawn.z+5],spawnRadius:0,interactionRadius:7,displayRadius:65,movementMode:'fixed',members:[{id:'kiki',offset:[-.8,0],height:1.65},{id:'jiji',offset:[.8,0],height:.7}],dialogues:KIKI_JIJI_DIALOGUES}];
+ }
+ let npc=null;try{npc=createNpcSystem({scene,container,groups:npcGroups,ground:(x,z)=>terrainHeight(world,x,z),camera});npc.installSettings(document.querySelector('#notebook-menu'));}catch(error){console.warn('NPC disabled:',error);container.dataset.npcError='true';}
  const controls={target:new THREE.Vector3(),update(){},dispose(){}};
  controls.enableDamping=true;controls.dampingFactor=.07;
  controls.maxPolarAngle=Math.PI/2.05;controls.minDistance=15;controls.maxDistance=9000;
@@ -397,21 +407,22 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  const gameInput=createGameInput({
    canvas:renderer.domElement,joystick:document.querySelector('#joystick'),
    knob:document.querySelector('#joystick-knob'),runButton:document.querySelector('#run'),
-   isActive:()=>mode==='walk'&&!warpController?.busy&&!notebook.opened,
+   isActive:()=>mode==='walk'&&!warpController?.busy&&!notebook.opened&&!npc?.talking,
    onLook(dx,dy){if(mode!=='walk'||warpController?.busy)return;cameraYaw+=dx;cameraPitch=Math.min(1.1,Math.max(.2,cameraPitch+dy));},
    onZoom(ratio){if(mode!=='walk'||warpController?.busy)return;cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));},
-   onModeToggle(){if(notebook.opened){notebook.close();return;}changeMode(mode==='walk'?'map':'walk');},
-   onTap(x,y,rect){if(mode==='walk'&&!warpController?.busy&&!notebook.opened)exploration?.collectAt(x,y,rect);},
-   onInteract(){if(notebook.opened){notebook.activate();return;}sound.activate();if(warpController?.busy)return;if(mode==='map')map2d?.select();else exploration?.collect();},
-   onBack(){if(notebook.opened){notebook.close();gameInput.reset();return;}if(warpController?.busy){warpController.cancel();return;}if(mode==='map'&&!map2d?.cancel())changeMode('walk');},
+   onModeToggle(){npc?.close();if(notebook.opened){notebook.close();return;}changeMode(mode==='walk'?'map':'walk');},
+   onTap(x,y,rect){if(mode==='walk'&&!warpController?.busy&&!notebook.opened){if(npc?.interactAt(x,y,rect)){gameInput.reset();return;}exploration?.collectAt(x,y,rect);}},
+   onInteract(){if(npc?.talking){npc.advance();return;}if(notebook.opened){notebook.activate();return;}sound.activate();if(warpController?.busy)return;if(mode==='map')map2d?.select();else if(!npc?.interactNearest())exploration?.collect();else gameInput.reset();},
+   onBack(){if(npc?.talking){npc.close();gameInput.reset();return;}if(notebook.opened){notebook.close();gameInput.reset();return;}if(warpController?.busy){warpController.cancel();return;}if(mode==='map'&&!map2d?.cancel())changeMode('walk');},
    onCharacter(id){switchCharacter(id);},
    onActivity(kind){sound.activate();if(kind)document.querySelector('#app').dataset.input=kind;},
    onMapControl(input,dt){if(mode==='map')map2d?.move(input,dt);},
    onMapZoom(delta){if(mode==='map')map2d?.zoomStep(delta);},
-   onMenu(){notebook.toggle();gameInput.reset();},onMenuMove:direction=>notebook.move(direction),onMenuAdjust:amount=>notebook.adjust(amount)
+   onMenu(){npc?.close();notebook.toggle();gameInput.reset();},onMenuMove:direction=>notebook.move(direction),onMenuAdjust:amount=>notebook.adjust(amount)
 
  });
- notebook.onChange(()=>gameInput.reset());
+ notebook.onChange(()=>{if(notebook.opened)npc?.close();gameInput.reset();});
+ const onNpcEnter=e=>{if(e.key==='Enter'&&npc?.talking&&!e.repeat&&!e.target?.matches?.('button,input,textarea,select')){e.preventDefault();npc.advance();}};window.addEventListener('keydown',onNpcEnter);
  let footCache=null;
  const avatarPosition=()=>{
    let y=playerState.y;
@@ -462,6 +473,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    avatarPosition();followCamera(0,true);updateHud();streamer.update(playerState.x,playerState.z);
  }
  function changeMode(next){
+   npc?.close();
    if(warpController?.busy)warpController.cancel();
    if(next==='map'&&!map2d)return;
    mode=next;controls.enabled=false;gameInput.reset();accumulator=0;
@@ -478,7 +490,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  const characterButton=document.querySelector('#characters');characterButton.hidden=!playerSprite;
  for(const [id,label] of [['cat','猫（L）'],['rabbit','うさぎ（R）']]){const b=iconButton(id,label,'character-'+id);b.onclick=()=>switchCharacter(id);characterButton.append(b);}
  function characterState(){for(const b of characterButton.children)b.setAttribute('aria-pressed',String(b.id==='character-'+playerSprite?.snapshot().character));}
- function switchCharacter(id){if(mode!=='walk'||warpController?.busy||notebook.opened)return;const c=id?playerSprite?.selectCharacter(id):playerSprite?.switchCharacter();if(c){characterState();avatarPosition();}}
+ function switchCharacter(id){if(mode!=='walk'||warpController?.busy||notebook.opened||npc?.talking)return;const c=id?playerSprite?.selectCharacter(id):playerSprite?.switchCharacter();if(c){characterState();avatarPosition();}}
  characterState();
  warpController=createWarpController({
   allowed:id=>mode==='map'&&canWarp(warpRegistry,map2d.store,id),
@@ -594,7 +606,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    const rawDt=clock.getDelta(),dt=Math.min(rawDt,.16);
    gameInput.pollGamepad(dt,notebook.opened?'menu':mode);
    document.querySelector('#app').dataset.running=String(gameInput.getIntent().run);
-   if(mode==='walk'&&!warpController?.busy&&!notebook.opened){
+   if(mode==='walk'&&!warpController?.busy&&!notebook.opened&&!npc?.talking){
      accumulator+=dt;const intent=gameInput.getIntent();let n=0;
      while(accumulator>=fixedStep&&n<10){
        playerState=advancePlayer(playerState,{...intent,yaw:cameraYaw},world,fixedStep);
@@ -622,6 +634,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    landmarkFX.update(dt);
    map2d?.update(playerState.x,playerState.z,dt,mode==='walk');
    sound.update(map2d?.biomeAt(playerState.x,playerState.z)||'urban',dt);
+   npc?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode,occlusion:()=>[...visuals.values()].map(v=>v.root)});
    exploration?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode,camera,occluders:[...visuals.values()].flatMap(v=>[v.root.children[0],...v.layers.buildings.children])});
    wildlife?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
    poiMarkers?.update({camera,mode,focus:playerState,isFound:id=>map2d?.isFound(id),pulse:id=>map2d?.pulse(id),isWarp:id=>canWarp(warpRegistry,map2d?.store||{has:()=>false},id)});
@@ -632,6 +645,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    metricTime+=dt;
    if(metricTime>.8){
      container.dataset.wildlifeVisible=String(wildlife?.visibleCount||0);
+     container.dataset.npcVisible=String(npc?.visibleCount||0);
      container.dataset.wildlifeCandidates=String(wildlife?.candidateCount||0);
      container.dataset.gpuGeometries=String(renderer.info.memory.geometries);
      container.dataset.gpuTextures=String(renderer.info.memory.textures);
@@ -651,10 +665,10 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  reportStreaming(streamer.snapshot());
  draw();
  window.addEventListener('pagehide',()=>{
-   cancelAnimationFrame(frame);observer.disconnect();warpController?.cancel();gameInput.destroy();controls.dispose();
+   cancelAnimationFrame(frame);window.removeEventListener('keydown',onNpcEnter);observer.disconnect();warpController?.cancel();gameInput.destroy();controls.dispose();
    longTaskObserver?.disconnect();
    wideLayer?.dispose();
-   landmarkFX.dispose();map2d?.dispose();sound.dispose();exploration?.dispose();wildlife?.dispose();poiMarkers?.dispose();biomeDebug?.dispose();
+   npc?.dispose();landmarkFX.dispose();map2d?.dispose();sound.dispose();exploration?.dispose();wildlife?.dispose();poiMarkers?.dispose();biomeDebug?.dispose();
    void streamer.dispose();
    natureRenderer.dispose();
    if(playerSprite)playerSprite.dispose();
