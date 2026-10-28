@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { integrateGameHtml } from './production-html.mjs';
 
 const DEFAULT_PUBLIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -123,6 +124,16 @@ export async function assembleProduction({ publicRoot = DEFAULT_PUBLIC_ROOT, pri
     } else {
       throw new Error('Protected path type changed: ' + item);
     }
+  }
+  // Only this manifest describes the private Michitanken host. Preserve its head
+  // and protected data while installing the PUBLIC UI required by its engine.
+  if (manifest.protectedPaths.includes('index.html') && manifest.publicPaths.includes('src') && manifest.publicPaths.includes('lib')) {
+    const privateHtml = await fs.readFile(path.join(privateDir,'index.html'),'utf8');
+    const publicHtml = await fs.readFile(path.join(publicDir,'index.html'),'utf8');
+    await fs.writeFile(path.join(outputDir,'index.html'),integrateGameHtml(privateHtml,publicHtml));
+    await fs.mkdir(path.join(outputDir,'scripts'),{recursive:true});
+    await fs.copyFile(new URL('./production-html.mjs',import.meta.url),path.join(outputDir,'scripts/production-html.mjs'));
+    await fs.writeFile(path.join(outputDir,'vite.config.js'),"import {checkFile} from './scripts/production-html.mjs';\nexport default {plugins:[{name:'production-html-contract',async buildStart(){await checkFile(process.cwd());}}]};\n");
   }
   return { outputDir, publicPaths: manifest.publicPaths, protectedPaths: manifest.protectedPaths };
 }
