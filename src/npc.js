@@ -5,9 +5,22 @@ import {prepareNpcZip} from './npc-zip.js';
 import {BOOK_GROUPS} from '../lib/book-characters.mjs';
 
 // The host supplies fictional or private group positions; this module never uploads images.
-export function createNpcSystem({scene,container,groups,ground,camera,storage,blocked=()=>true}){
+export function createNpcSystem({scene,container,groups,ground,camera,storage,blocked=()=>true,onMeet=()=>{}}){
  if(storage===undefined){try{storage=globalThis.localStorage;}catch{storage=null;}}
  validateGroups(groups);const imageStore=createNpcImageStore(),dialogue=createDialogueState(storage),live=new Map();let closed=false,mode='walk',px=0,pz=0,occluders=()=>[],refreshTime=0,generation=0;
+ // Device-only size preference; preserve authored differences between characters.
+ const sizeKey='michitanken.npc.size.v1';
+ const scaleClamp=value=>Math.min(1.5,Math.max(.65,Number(value)||1));
+ let scaleFactor=1;
+ try{scaleFactor=scaleClamp(storage?.getItem(sizeKey));}catch{}
+ const setScale=value=>{
+  scaleFactor=scaleClamp(value);
+  for(const v of live.values())for(const m of v.members){
+   const height=m.baseHeight*scaleFactor,aspect=m.sprite.material.map.image.width/m.sprite.material.map.image.height;
+   m.sprite.scale.set(height*aspect,height,1);
+  }
+  try{storage?.setItem(sizeKey,String(scaleFactor));}catch{}
+ };
  const panel=document.createElement('section');panel.className='npc-dialog paper';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','会話');
  const speaker=document.createElement('strong'),line=document.createElement('p'),next=document.createElement('button');next.textContent='つぎへ';panel.append(speaker,line,next);container.append(panel);
  const showLine=()=>{const item=dialogue.current?.lines[dialogue.current.index];if(!item){panel.hidden=true;return;}speaker.textContent=item[0];line.textContent=item[1];next.textContent=dialogue.current.index===dialogue.current.lines.length-1?'おしまい':'つぎへ';panel.hidden=false;};
@@ -32,7 +45,7 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
  async function mount(g){if(live.has(g.groupId)||closed)return;const v={group:g,members:[],cancelled:false,x:g.spawnAnchor[0],z:g.spawnAnchor[1],target:null,wait:1+Math.random()*3};live.set(g.groupId,v);const token=generation;
   const visualMembers=g.groupId==='twins'?[{...g.members[0],id:'twins',offset:[0,0]}]:g.members;v.visualCount=visualMembers.length;
   for(const m of visualMembers){let y;try{y=ground(g.spawnAnchor[0]+m.offset[0],g.spawnAnchor[1]+m.offset[1]);}catch{release(g.groupId);return;}if(!Number.isFinite(y)){release(g.groupId);return;}
-   const animation=await textureFor(m.id),tex=animation.texture;if(closed||v.cancelled||token!==generation){tex.dispose();animation.bitmap?.close();return;}const material=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:.05,depthTest:true,depthWrite:true});const sprite=new THREE.Sprite(material);const aspect=tex.image.width/tex.image.height;sprite.scale.set(m.height*aspect,m.height,1);sprite.center.set(.5,0);sprite.position.set(g.spawnAnchor[0]+m.offset[0],y,g.spawnAnchor[1]+m.offset[1]);sprite.name='npc-'+m.id;sprite.visible=false;scene.add(sprite);v.members.push({id:m.id,sprite,animation,offset:m.offset,speed:.65+Math.random()*.12});
+   const animation=await textureFor(m.id),tex=animation.texture;if(closed||v.cancelled||token!==generation){tex.dispose();animation.bitmap?.close();return;}const material=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:.05,depthTest:true,depthWrite:true});const sprite=new THREE.Sprite(material);const aspect=tex.image.width/tex.image.height;sprite.scale.set(m.height*scaleFactor*aspect,m.height*scaleFactor,1);sprite.center.set(.5,0);sprite.position.set(g.spawnAnchor[0]+m.offset[0],y,g.spawnAnchor[1]+m.offset[1]);sprite.name='npc-'+m.id;sprite.visible=false;scene.add(sprite);v.members.push({id:m.id,sprite,animation,offset:m.offset,baseHeight:m.height,speed:.65+Math.random()*.12});
   }
   for(const member of v.members)member.sprite.visible=true;
  }
@@ -70,11 +83,15 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
  function interactAt(clientX,clientY,rect){if(closed||mode!=='walk'||dialogue.current||!rect||rect.width<=0||rect.height<=0)return false;const nx=(clientX-rect.left)/rect.width*2-1,ny=1-(clientY-rect.top)/rect.height*2;if(Math.abs(nx)>1||Math.abs(ny)>1)return false;camera.updateMatrixWorld();ray.setFromCamera(new THREE.Vector2(nx,ny),camera);ray.far=camera.far;
   const candidates=[];for(const v of live.values()){const g=v.group;if(v.members.length!==v.visualCount)continue;for(const m of v.members){if(Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)>g.interactionRadius)continue;m.sprite.updateWorldMatrix(true,false);const hit=ray.intersectObject(m.sprite)[0];if(hit)candidates.push({g,hit});}}
   candidates.sort((a,b)=>a.hit.distance-b.hit.distance);if(!candidates.length)return false;const candidate=candidates[0];ray.far=Math.max(0,candidate.hit.distance-.01);const obstacles=occluders().filter(o=>o?.visible);for(const o of obstacles)o.updateWorldMatrix(true,true);if(ray.intersectObjects(obstacles,true).length)return false;
-  dialogue.start(candidate.g);showLine();return !!dialogue.current;
+  dialogue.start(candidate.g);showLine();if(dialogue.current){try{onMeet(candidate.g);}catch(error){console.warn('NPC encounter recording failed',error);}}return !!dialogue.current;
  }
  function interactNearest(){if(dialogue.current)return advance();const choices=[...live.values()].filter(v=>v.members.length===v.visualCount&&v.members.some(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)<=v.group.interactionRadius)).sort((a,b)=>Math.min(...a.members.map(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)))-Math.min(...b.members.map(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz))));if(!choices.length)return false;const m=choices[0].members.slice().sort((a,b)=>Math.hypot(a.sprite.position.x-px,a.sprite.position.z-pz)-Math.hypot(b.sprite.position.x-px,b.sprite.position.z-pz))[0].sprite,p=m.position.clone();p.y+=m.scale.y*.5;p.project(camera);const rect=container.getBoundingClientRect();return interactAt(rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2,rect);}
  async function refreshImages(){generation++;for(const id of [...live.keys()])release(id);refreshTime=.25;}
- function installSettings(menu){const section=document.createElement('details');section.className='npc-settings';const summary=document.createElement('summary');summary.textContent='登場人物の画像';section.append(summary);const explanation=document.createElement('p');explanation.textContent='9枚の画像をまとめたZIPを1つ選ぶと、この端末だけに登録されます。画像は送信されません。';section.append(explanation);
+ function installSettings(menu){const section=document.createElement('details');section.className='npc-settings';const summary=document.createElement('summary');summary.textContent='登場人物の画像・大きさ';section.append(summary);
+  const sizeLabel=document.createElement('label');sizeLabel.className='npc-size-setting';sizeLabel.textContent='登場人物の大きさ ';
+  const sizeOutput=document.createElement('output');sizeOutput.textContent=Math.round(scaleFactor*100)+'%';
+  const sizeInput=document.createElement('input');sizeInput.type='range';sizeInput.min='65';sizeInput.max='150';sizeInput.step='5';sizeInput.value=String(Math.round(scaleFactor*100));sizeInput.setAttribute('aria-label','登場人物の大きさ');sizeInput.oninput=()=>{setScale(Number(sizeInput.value)/100);sizeOutput.textContent=sizeInput.value+'%';};sizeLabel.append(sizeInput,sizeOutput);section.append(sizeLabel);
+  const explanation=document.createElement('p');explanation.textContent='9枚の画像をまとめたZIPを1つ選ぶと、この端末だけに登録されます。画像は送信されません。';section.append(explanation);
   const zipLabel=document.createElement('label');zipLabel.textContent='画像ZIPを一括登録';
   const zipInput=document.createElement('input');zipInput.type='file';zipInput.accept='.zip,application/zip,application/x-zip-compressed';zipInput.setAttribute('aria-label','9枚の画像ZIP');zipLabel.append(zipInput);section.append(zipLabel);
   const zipStatus=document.createElement('p');zipStatus.setAttribute('role','status');zipStatus.textContent='ZIPを選択してください';section.append(zipStatus);
