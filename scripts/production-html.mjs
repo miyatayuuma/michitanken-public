@@ -7,7 +7,7 @@ export function assertGameHtml(html) {
   const matches=[...html.matchAll(/<([a-z][\w-]*)\b[^>]*\bid\s*=\s*["']([^"']+)["'][^>]*>/gi)].filter(m=>m[2]===id);
   if(matches.length!==1||matches[0][1].toLowerCase()!==tag)throw Error('Required game UI missing or invalid: '+id);
  }
- if(!/<script\b[^>]*type=["']module["'][^>]*src=["']\/src\/main\.js["']/i.test(html))throw Error('Game entry module missing');
+ if(!/<script\b[^>]*type=["']module["'][^>]*src=["']\/src\/(?:main|world-boot)\.js["']/i.test(html))throw Error('Game entry module missing');
  if(!/<section\b[^>]*id=["']notebook-menu["'][\s\S]*?<button\b[^>]*id=["']menu-close["']/i.test(html))throw Error('Menu close control missing');
 }
 export function integrateGameHtml(privateHtml,publicHtml) {
