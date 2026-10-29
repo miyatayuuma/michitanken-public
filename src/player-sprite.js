@@ -52,6 +52,11 @@ export function createSpriteAvatar(config,texture){
    // Upright cylindrical billboard preserves ground contact at every camera pitch.
    plane.rotation.y=yaw;plane.scale.x=next.flipped?-1:1;current=next;
   },
+  // Read-only sprite slices for a device-local, same-scale character lineup.
+  previews:()=>(config.characters?.length?config.characters:[{id:'player',animations:config.animations}]).map(entry=>{
+   const frame=config.frames[entry.animations.idle[0]];
+   return {id:entry.id,source:texture.image,rect:frame.rect,pivot:frame.pivot,pixelsPerUnit:config.pixelsPerUnit};
+  }),
   snapshot:()=>({...current,character,pixelsPerUnit:config.pixelsPerUnit,depthTest:material.depthTest,
    depthWrite:material.depthWrite,position:group.position.toArray(),yaw:plane.rotation.y}),
   dispose(){if(disposed)return;disposed=true;geometry.dispose();material.dispose();texture.dispose();
