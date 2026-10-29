@@ -12,7 +12,15 @@ const demo=document.createElement('button');demo.textContent='架空の街で遊
 const erase=document.createElement('button');erase.textContent='端末のワールドパックだけ削除';
 const controls=document.createElement('div');controls.append(label,document.createElement('br'),demo,erase);
 box.append(title,status,controls);root.append(box);document.body.append(root);
-const button=document.createElement('button');button.textContent='ワールド';button.style.cssText='position:fixed;right:.5rem;bottom:.5rem;z-index:9999';button.onclick=()=>{root.hidden=false;root.style.display='grid';};document.body.append(button);
+// Keep world switching available, but never cover the walking/run controls.
+const button=document.createElement('button');
+button.id='world-open';button.type='button';button.className='paper';
+button.textContent='ワールドを変更';
+button.onclick=()=>{
+ document.querySelector('#menu-close')?.click();
+ root.hidden=false;root.style.display='grid';
+};
+document.querySelector('#notebook-menu').insertBefore(button,document.querySelector('#standalone-audio'));
 let current=null,started=false;
 const hide=()=>{root.hidden=true;root.style.display='none';};
 const contentType=name=>name.endsWith('.json')?'application/json':name.endsWith('.png')?'image/png':name.endsWith('.webp')?'image/webp':name.endsWith('.glb')?'model/gltf-binary':name.endsWith('.ogg')?'audio/ogg':name.endsWith('.mp3')?'audio/mpeg':'application/octet-stream';
