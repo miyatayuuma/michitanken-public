@@ -34,7 +34,9 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
  const makeSilhouette=id=>{const c=document.createElement('canvas');c.width=128;c.height=192;const ctx=c.getContext('2d');ctx.fillStyle='#46534c';if(id==='jiji'){ctx.beginPath();ctx.moveTo(24,85);ctx.lineTo(20,42);ctx.lineTo(47,61);ctx.lineTo(80,61);ctx.lineTo(108,42);ctx.lineTo(104,85);ctx.ellipse(64,93,44,40,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(64,151,35,39,0,0,Math.PI*2);ctx.fill();}else{ctx.beginPath();ctx.arc(64,43,31,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.moveTo(40,70);ctx.lineTo(88,70);ctx.lineTo(108,188);ctx.lineTo(20,188);ctx.closePath();ctx.fill();}return c;};
  function canvasTexture(canvas){const t=new THREE.CanvasTexture(canvas);t.colorSpace=THREE.SRGBColorSpace;t.needsUpdate=true;return t;}
  async function textureFor(id){
-  const record=await imageStore.get(id).catch(()=>null);
+  let record=await imageStore.get(id).catch(()=>null);
+  const url=globalThis.michiWorldAsset?.('assets/npc/'+id+'.png');
+  if(url){try{const blob=await (await fetch(url)).blob(),bitmap=await createImageBitmap(blob);const {width,height}=bitmap;bitmap.close();const columns=2,rows=2;record={blob,width,height,columns,rows,rect:{x:0,y:0,width:Math.round(width/2),height:Math.round(height/2)}};}catch{record=null;}}
   if(!record||!validRect(record.rect,record.width,record.height))return {textures:[canvasTexture(makeSilhouette(id))]};
   let bitmap;try{
    bitmap=await createImageBitmap(record.blob);if(bitmap.width!==record.width||bitmap.height!==record.height)throw Error('size mismatch');
@@ -127,5 +129,6 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
   talking:dialogue.current?.groupId===v.group.groupId}));},
  get visibleCount(){return [...live.values()].reduce((n,v)=>n+v.members.length,0);}};
 }
+
 
 
