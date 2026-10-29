@@ -462,7 +462,25 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    npcGroups=resolveNpcPlacements(npcGroups,npcCatalog,{fallback:BOOK_GROUP_BY_ID});
   }else if(response.status!==404)console.warn('NPC catalog HTTP',response.status);
  }catch(error){npcCatalog=null;console.warn('NPC catalog unavailable; using previous dialogues',error);}
- let npc=null;try{npc=createNpcSystem({scene,container,groups:npcGroups,ground:(x,z)=>terrainHeight(world,x,z),blocked:(x,z)=>!!collisionReason(world,x,z,.38),camera,onMeet:g=>map2d?.recordNpcMeet(g),imagePacks:npcCatalog?.spritePacks});npc.installSettings(document.querySelector('#notebook-menu'));}catch(error){console.warn('NPC disabled:',error);container.dataset.npcError='true';}
+ // NPCs and the player share the same rendered surface (terrain, roads and bridges).
+ // This adjusts the visual foot anchor only; collision and movement are unchanged.
+ const npcGround=(x,z)=>{
+  const owner=tileAtPosition(manifest,x,z),tile=owner&&world.tileWorlds.get(owner.id);
+  return tile
+   ?renderedFootHeight(tile.field,x-owner.offset[0],z-owner.offset[1],world.baseElevation)
+   :terrainHeight(world,x,z);
+ };
+ let npc=null;
+ try{
+  npc=createNpcSystem({
+   scene,container,groups:npcGroups,ground:npcGround,
+   blocked:(x,z)=>!!collisionReason(world,x,z,.38),camera,
+   onMeet:g=>map2d?.recordNpcMeet(g)
+  });
+  npc.installSettings(document.querySelector('#notebook-menu'),{
+   playerPreviews:()=>playerSprite?.previews()||[]
+  });
+ }catch(error){console.warn('NPC disabled:',error);container.dataset.npcError='true';}
  const controls={target:new THREE.Vector3(),update(){},dispose(){}};
  controls.enableDamping=true;controls.dampingFactor=.07;
  controls.maxPolarAngle=Math.PI/2.05;controls.minDistance=15;controls.maxDistance=9000;
