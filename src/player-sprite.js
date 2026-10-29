@@ -65,9 +65,10 @@ export async function loadPlayerSprite({baseURL='./',fetcher=fetch,loader=new TH
  if(!response.ok)throw Error('Player sprite config HTTP '+response.status);
  if(!response.headers.get('content-type')?.includes('json'))return null;
  const config=validateSpriteConfig(await response.json());
- const texture=await loader.loadAsync(`${baseURL}${config.image}`);
+ const texture=await loader.loadAsync(globalThis.michiWorldAsset?.(config.image) || `${baseURL}${config.image}`);
  if(texture.image.width!==config.width||texture.image.height!==config.height){
   texture.dispose();throw Error('Player sprite source dimensions do not match metadata');
  }
  return createSpriteAvatar(config,texture);
 }
+

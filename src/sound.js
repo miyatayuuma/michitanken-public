@@ -1,6 +1,7 @@
 import {createBiomeGate} from '../lib/exploration-map.mjs';
 /** Uses DreamCore's exact settings and BgmPlayer. At most two streamed BGM elements. */
 export function createMichiSound(){
+ if(globalThis.michiWorldActive?.())return {activate(){},update(){},se(){return false;},snapshot(){return {configured:false,mutedWorld:true};},dispose(){}};
  const gate=createBiomeGate();let config=null,player=null,activated=false,closed=false,lastBiome=null,error=null,pending=false,settings=null,seAudio=null,unbind=null;
  const cooldown=new Map(),abort=new AbortController(),{signal}=abort;
  const base=import.meta.env.BASE_URL;
