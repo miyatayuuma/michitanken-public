@@ -1,23 +1,18 @@
 import * as THREE from 'three';
 import {createDialogueState,groupInRange,validateGroups,validRect} from '../lib/npc.mjs';
 import {createNpcImageStore} from './npc-storage.js';
-import {prepareNpcZip} from './npc-zip.js';
-import {BOOK_GROUPS} from '../lib/book-characters.mjs';
+import {openNpcSizeComparison} from './npc-size-comparison.js';
 
 // The host supplies fictional or private group positions; this module never uploads images.
-export function createNpcSystem({scene,container,groups,ground,camera,storage,blocked=()=>true,onMeet=()=>{},imagePacks=null}){
+export function createNpcSystem({scene,container,groups,ground,camera,storage,blocked=()=>true,onMeet=()=>{}}){
  if(storage===undefined){try{storage=globalThis.localStorage;}catch{storage=null;}}
  validateGroups(groups);
- // A pack can be added to PRIVATE npc-catalog.json without changing JS.
- // Preserve compatibility with the original 9-sheet ZIP on older installations.
- const defaultPack={id:'original-nine',name:'既存9枚の画像',spriteIds:BOOK_GROUPS.flatMap(g=>g.groupId==='twins'?['twins']:g.members.map(([id])=>id))};
- const packs=Array.isArray(imagePacks)&&imagePacks.length?imagePacks:[defaultPack];
  const imageStore=createNpcImageStore(),dialogue=createDialogueState(storage),live=new Map();let closed=false,mode='walk',px=0,pz=0,occluders=()=>[],refreshTime=0,generation=0;
  // Device-only size preference; preserve authored differences between characters.
- const sizeKey='michitanken.npc.size.v1';
+ const sizeKey='michitanken.npc.size.v2';
  const scaleClamp=value=>Math.min(1.5,Math.max(.65,Number(value)||1));
- let scaleFactor=1;
- try{scaleFactor=scaleClamp(storage?.getItem(sizeKey));}catch{}
+ let scaleFactor=1.2;
+ try{const saved=storage?.getItem(sizeKey);if(saved!=null)scaleFactor=scaleClamp(saved);}catch{}
  const setScale=value=>{
   scaleFactor=scaleClamp(value);
   for(const v of live.values())for(const m of v.members){
@@ -26,6 +21,7 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
   }
   try{storage?.setItem(sizeKey,String(scaleFactor));}catch{}
  };
+ let closeComparison=null;
  const panel=document.createElement('section');panel.className='npc-dialog paper';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','会話');
  const speaker=document.createElement('strong'),line=document.createElement('p'),next=document.createElement('button');next.textContent='つぎへ';panel.append(speaker,line,next);container.append(panel);
  const showLine=()=>{const item=dialogue.current?.lines[dialogue.current.index];if(!item){panel.hidden=true;return;}speaker.textContent=item[0];line.textContent=item[1];next.textContent=dialogue.current.index===dialogue.current.lines.length-1?'おしまい':'つぎへ';panel.hidden=false;};
@@ -54,7 +50,7 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
   const visualMembers=g.members;v.visualCount=visualMembers.length;
   for(const [index,m] of visualMembers.entries()){let y;try{y=ground(g.spawnAnchor[0]+m.offset[0],g.spawnAnchor[1]+m.offset[1]);}catch{release(g.groupId);return;}if(!Number.isFinite(y)){release(g.groupId);return;}
    const imageId=m.spriteId||g.visualSpriteId||m.id;let resource=v.resources.get(imageId);if(!resource){resource=await textureFor(imageId);if(closed||v.cancelled||token!==generation){for(const t of resource.textures)t.dispose();return;}v.resources.set(imageId,resource);}
-   const tex=resource.textures[0],material=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:.05,depthTest:true,depthWrite:true});const sprite=new THREE.Sprite(material);const aspect=tex.image.width/tex.image.height;sprite.scale.set(m.height*scaleFactor*aspect,m.height*scaleFactor,1);sprite.center.set(.5,0);sprite.position.set(g.spawnAnchor[0]+m.offset[0],y,g.spawnAnchor[1]+m.offset[1]);sprite.name='npc-'+m.id;sprite.visible=false;scene.add(sprite);const phase=visualMembers.slice(0,index).some(other=>(other.spriteId||g.visualSpriteId||other.id)===imageId)?1:0;v.members.push({id:m.id,sprite,animation:{resource,frame:0,frames:resource.textures.length,phase},offset:m.offset,baseHeight:m.height,speed:.65+Math.random()*.12});
+   const tex=resource.textures[0],material=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:.05,depthTest:true,depthWrite:true});const sprite=new THREE.Sprite(material);const aspect=tex.image.width/tex.image.height;sprite.scale.set(m.height*scaleFactor*aspect,m.height*scaleFactor,1);sprite.center.set(.5,resource.textures.length===4?.1:0);sprite.position.set(g.spawnAnchor[0]+m.offset[0],y,g.spawnAnchor[1]+m.offset[1]);sprite.name='npc-'+m.id;sprite.visible=false;scene.add(sprite);const phase=visualMembers.slice(0,index).some(other=>(other.spriteId||g.visualSpriteId||other.id)===imageId)?1:0;v.members.push({id:m.id,sprite,animation:{resource,frame:0,frames:resource.textures.length,phase},offset:m.offset,baseHeight:m.height,speed:.65+Math.random()*.12});
   }
   for(const member of v.members)member.sprite.visible=true;
  }
@@ -96,34 +92,36 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
  }
  function interactNearest(){if(dialogue.current)return advance();const choices=[...live.values()].filter(v=>v.members.length===v.visualCount&&v.members.some(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)<=v.group.interactionRadius)).sort((a,b)=>Math.min(...a.members.map(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)))-Math.min(...b.members.map(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz))));if(!choices.length)return false;const m=choices[0].members.slice().sort((a,b)=>Math.hypot(a.sprite.position.x-px,a.sprite.position.z-pz)-Math.hypot(b.sprite.position.x-px,b.sprite.position.z-pz))[0].sprite,p=m.position.clone();p.y+=m.scale.y*.5;p.project(camera);const rect=container.getBoundingClientRect();return interactAt(rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2,rect);}
  async function refreshImages(){generation++;for(const id of [...live.keys()])release(id);refreshTime=.25;}
- function installSettings(menu){const section=document.createElement('details');section.className='npc-settings';const summary=document.createElement('summary');summary.textContent='登場人物の画像・大きさ';section.append(summary);
-  const sizeLabel=document.createElement('label');sizeLabel.className='npc-size-setting';sizeLabel.textContent='登場人物の大きさ ';
+ function installSettings(menu,{playerPreviews=()=>[]}={}){
+  const section=document.createElement('details');section.className='npc-settings';
+  const summary=document.createElement('summary');summary.textContent='登場人物の大きさ';
+  section.append(summary);
+  const sizeLabel=document.createElement('label');sizeLabel.className='npc-size-setting';
+  sizeLabel.textContent='登場人物の大きさ ';
   const sizeOutput=document.createElement('output');sizeOutput.textContent=Math.round(scaleFactor*100)+'%';
-  const sizeInput=document.createElement('input');sizeInput.type='range';sizeInput.min='65';sizeInput.max='150';sizeInput.step='5';sizeInput.value=String(Math.round(scaleFactor*100));sizeInput.setAttribute('aria-label','登場人物の大きさ');sizeInput.oninput=()=>{setScale(Number(sizeInput.value)/100);sizeOutput.textContent=sizeInput.value+'%';};sizeLabel.append(sizeInput,sizeOutput);section.append(sizeLabel);
-  const explanation=document.createElement('p');explanation.textContent='画像ZIPはこの端末にだけ保存されます。新キャラの画像は追加ZIPで登録でき、既存画像は消えません。';section.append(explanation);
-  // Sprite packs are independent transactions: importing a new group never
-  // requires re-selecting the original nine images or changing sprite IDs.
-  for(const pack of packs){
-   const zipLabel=document.createElement('label');zipLabel.textContent=pack.name+'：ZIPを登録';
-   const zipInput=document.createElement('input');zipInput.type='file';zipInput.accept='.zip,application/zip,application/x-zip-compressed';
-   zipInput.setAttribute('aria-label',pack.spriteIds.length+'枚の画像ZIP');zipLabel.append(zipInput);section.append(zipLabel);
-   const zipStatus=document.createElement('p');zipStatus.setAttribute('role','status');zipStatus.textContent='ZIPを選択してください';section.append(zipStatus);
-   zipInput.onchange=async()=>{
-    const file=zipInput.files?.[0];if(!file)return;
-    zipInput.disabled=true;zipStatus.textContent='ZIPの画像を確認しています…';
-    try{
-     const mapping=Object.fromEntries(groups.flatMap(g=>g.members.map(m=>[m.id,m.spriteId||g.visualSpriteId||m.id])).filter(([,spriteId])=>pack.spriteIds.includes(spriteId)));
-     const records=await prepareNpcZip(file,pack.spriteIds,globalThis.createImageBitmap,mapping);
-     await imageStore.putMany(records);
-     await refreshImages();
-     zipStatus.textContent=records.length+'枚の画像を登録しました';
-    }catch(error){zipStatus.textContent=error?.message||'画像ZIPを読み込めませんでした';}
-    finally{zipInput.disabled=false;zipInput.value='';}
-   };
-  }
+  const sizeInput=document.createElement('input');sizeInput.type='range';
+  sizeInput.min='65';sizeInput.max='150';sizeInput.step='5';
+  sizeInput.value=String(Math.round(scaleFactor*100));
+  sizeInput.setAttribute('aria-label','登場人物の大きさ');
+  sizeInput.oninput=()=>{
+   setScale(Number(sizeInput.value)/100);
+   sizeOutput.textContent=Math.round(scaleFactor*100)+'%';
+  };
+  sizeLabel.append(sizeInput,sizeOutput);section.append(sizeLabel);
+  const compareButton=document.createElement('button');compareButton.type='button';
+  compareButton.textContent='キャラサイズ比較を開く';
+  compareButton.onclick=()=>{
+   closeComparison?.();
+   closeComparison=openNpcSizeComparison({
+    container,groups,scaleFactor,playerPreviews,
+    readNpcImage:id=>imageStore.get(id),
+    onClose:()=>{closeComparison=null;compareButton.focus();}
+   });
+  };
+  section.append(compareButton);
   menu.append(section);
  }
- function dispose(){closed=true;generation++;stopDialogue();for(const id of [...live.keys()])release(id);panel.remove();void imageStore.close().catch(()=>{});}
+ function dispose(){closeComparison?.();closed=true;generation++;stopDialogue();for(const id of [...live.keys()])release(id);panel.remove();void imageStore.close().catch(()=>{});}
  return {update,interactAt,interactNearest,advance,close:stopDialogue,installSettings,dispose,targets(){const rect=container.getBoundingClientRect();return [...live.values()].flatMap(v=>v.members.map(m=>{const p=m.sprite.position.clone();p.y+=m.sprite.scale.y/2;p.project(camera);return {id:m.id,x:rect.left+(p.x+1)*rect.width/2,y:rect.top+(1-p.y)*rect.height/2};}));},get talking(){return !!dialogue.current;},snapshot(){return [...live.values()].map(v=>({groupId:v.group.groupId,
   visuals:v.members.map(m=>({id:m.id,x:m.sprite.position.x,z:m.sprite.position.z,frame:m.animation?.frame??0,frames:m.animation?.frames??1})),
   talking:dialogue.current?.groupId===v.group.groupId}));},
