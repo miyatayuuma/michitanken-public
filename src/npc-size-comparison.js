@@ -35,7 +35,7 @@ async function npcFrame(id,readNpcImage){
  }
  if(!bitmap)return {canvas:placeholder(),footRatio:0};
  try{
-  const columns=record?.columns||2,rows=record?.rows||2;
+  const columns=record?(record.columns||1):2,rows=record?(record.rows||1):2;
   const bounds=columns*rows===1&&record?.rect
    ?record.rect
    :{x:0,y:0,width:Math.round(bitmap.width/columns),height:Math.round(bitmap.height/rows)};
