@@ -56,5 +56,7 @@ input.onchange=async()=>{
 };
 demo.onclick=async()=>{current=null;if(started){sessionStorage.setItem('michi-demo-once','1');location.reload();}else await start();};
 erase.onclick=async()=>{if(!confirm('この端末のワールドパックだけを削除します。探索のセーブは残ります。'))return;try{await store.delete();current=null;status.textContent='パックを削除しました。';if(started)location.reload();}catch{status.textContent='パックを削除できませんでした。';}};
-try{const demoOnce=sessionStorage.getItem('michi-demo-once');sessionStorage.removeItem('michi-demo-once');const saved=demoOnce?null:await store.get();if(saved){current=await load(saved);status.textContent='保存済みのワールドを読み込みました。';await start();}else status.textContent='ZIPを選ぶか、架空の街をお試しください。';}
+try{const demoOnce=sessionStorage.getItem('michi-demo-once');sessionStorage.removeItem('michi-demo-once');const saved=demoOnce?null:await store.get();if(saved){current=await load(saved);status.textContent='保存済みのワールドを読み込みました。';await start();}
+else if(new URLSearchParams(location.search).has('test'))await start();
+else status.textContent='ZIPを選ぶか、架空の街をお試しください。';}
 catch(e){status.textContent='保存済みパックを開けません。ZIPを選び直してください。';console.error(e);}
