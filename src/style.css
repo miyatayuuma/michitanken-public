@@ -11,3 +11,10 @@
 
 .compass{border:0;box-shadow:none;background:transparent}.compass>svg{width:100%;height:100%;overflow:visible}.compass .north-needle{transform-origin:32px 32px;transform-box:view-box}#app[data-running=true] .compass{border:0;outline:2px solid var(--action);border-radius:50%}
 .npc-dialog{position:absolute;z-index:24;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(520px,calc(100% - 32px));padding:14px 16px;pointer-events:auto}.npc-dialog p{margin:8px 0;line-height:1.55}.npc-dialog button{display:block;margin-left:auto}.npc-settings{margin-top:16px}.npc-settings summary{cursor:pointer;min-height:44px}.npc-settings fieldset{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.npc-settings input[type=file],.npc-settings p{grid-column:1/-1;max-width:100%}.npc-settings label{display:flex;gap:4px;align-items:center}.npc-settings input[type=number]{width:70px;min-width:0}.npc-settings button{padding:6px}
+
+/* MT-13: device-only NPC size control and optional map cheat overlay. */
+.npc-settings .npc-size-setting{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0;}
+.npc-settings .npc-size-setting input[type=range]{flex:1 1 120px;max-width:210px;min-width:80px;min-height:36px;accent-color:var(--action);}
+.npc-settings .npc-size-setting output{min-width:48px;font-variant-numeric:tabular-nums;text-align:right;}
+#npc-map-cheat{position:absolute;right:20px;top:18px;z-index:3;padding:6px 9px;min-height:38px;min-width:110px;font-size:.72rem;white-space:nowrap;}
+@media(max-width:440px){#npc-map-cheat{top:61px;right:12px;padding:5px 7px;min-height:34px;}}

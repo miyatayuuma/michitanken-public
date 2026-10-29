@@ -3,5 +3,30 @@ import {validRect,validateGroups,groupInRange,createDialogueState,KIKI_JIJI_DIAL
 const group={groupId:'kiki-jiji',spawnAnchor:[10,20],interactionRadius:4,displayRadius:50,movementMode:'fixed',members:[{id:'kiki',offset:[-.8,0],height:1.5},{id:'jiji',offset:[.8,0],height:.65}],dialogues:KIKI_JIJI_DIALOGUES};
 test('configuration is external, validated, bounded and group scoped',()=>{assert.deepEqual(validateGroups([group]),[group]);assert.throws(()=>validateGroups([{...group,spawnAnchor:[NaN,0]}]));assert.throws(()=>validateGroups([group,group]));assert.equal(groupInRange(group,10,20),true);assert.equal(groupInRange(group,61,20),false);assert.equal(groupInRange(group,10,20,'map'),false);});
 test('frame rectangles must be explicitly bounded and integral',()=>{assert.ok(validRect({x:10,y:0,width:20,height:30},40,30));assert.equal(validRect(null,40,30),false);assert.equal(validRect({x:30,y:0,width:20,height:30},40,30),false);assert.equal(validRect({x:0,y:0,width:1.5,height:3},40,30),false);});
-test('only completed first encounter is saved; next sessions use reunion and alternate exploration',()=>{const values=new Map(),store={getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v)};let d=createDialogueState(store);assert.equal(d.start(group).kind,'first');assert.equal(d.start(group),null);d.close();assert.equal(d.start(group).kind,'first');while(d.advance());d=createDialogueState(store);assert.equal(d.start(group).kind,'again');while(d.advance());assert.equal(d.start(group).kind,'explore');while(d.advance());assert.equal(d.start(group).kind,'again');});
+test('unfinished first encounter stays first; consecutive conversations are normal',()=>{
+ const values=new Map(),store={getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
+ let d=createDialogueState(store);
+ assert.equal(d.start(group).kind,'first');assert.equal(d.start(group),null);d.close();
+ assert.equal(d.start(group).kind,'first');while(d.advance());
+ d=createDialogueState(store);
+ d.observe([group],10,20);
+ assert.equal(d.start(group).kind,'normal');while(d.advance());
+ assert.equal(d.start(group).kind,'normal');while(d.advance());
+ assert.equal(values.has('michitanken.npc.away.kiki-jiji'),false);
+});
+test('25 metre departure persists across reload; reunion is consumed only on completion',()=>{
+ const values=new Map(),store={getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
+ let d=createDialogueState(store);
+ assert.equal(d.start(group).kind,'first');while(d.advance());
+ d.observe([group],34.99,20);
+ assert.equal(d.start(group).kind,'normal');while(d.advance());
+ d.observe([group],35,20);
+ d=createDialogueState(store);
+ assert.equal(d.start(group).kind,'again');d.close();
+ d=createDialogueState(store);
+ assert.equal(d.start(group).kind,'again');while(d.advance());
+ d=createDialogueState(store);
+ assert.equal(d.start(group).kind,'normal');while(d.advance());
+ assert.equal(values.has('michitanken.npc.away.kiki-jiji'),false);
+});
 test('storage failure does not break dialogue',()=>{const d=createDialogueState({getItem(){throw Error();},setItem(){throw Error();}});assert.equal(d.start(group).kind,'first');while(d.advance());});
