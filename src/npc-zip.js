@@ -61,11 +61,13 @@ function rectangle(w,h,config){
  const x=Math.round(col*w/columns),y=Math.round(row*h/rows);
  return {x,y,width:Math.round((col+1)*w/columns)-x,height:Math.round((row+1)*h/rows)-y};
 }
-export async function prepareNpcZip(blob,requiredIds,decodeImage=globalThis.createImageBitmap){
+export async function prepareNpcZip(blob,requiredIds,decodeImage=globalThis.createImageBitmap,npcToSprite=null){
  if(typeof decodeImage!=='function')fail('この端末では画像を読み取れません');
  if(!Array.isArray(requiredIds)||requiredIds.length<1||new Set(requiredIds).size!==requiredIds.length)fail('キャラクター設定が不正です');
- const zip=await readNpcZip(blob),manifestBytes=await zip.read('npc-images.json');let members=null;
- if(manifestBytes){
+ const zip=await readNpcZip(blob),v2Bytes=await zip.read('manifest.json'),manifestBytes=await zip.read('npc-images.json');let members=null, v2=null;
+ if(v2Bytes){try{v2=JSON.parse(decoder.decode(v2Bytes));if(v2.formatVersion!==2||v2.columns!==2||v2.rows!==2||v2.frameCount!==4||v2.frameDurationMs!==250||!v2.members||typeof v2.members!=='object'||!v2.npcToSprite||typeof v2.npcToSprite!=='object')throw Error();members=v2.members;}catch{fail('manifest.json が不正です');} if(Object.keys(members).length!==requiredIds.length||requiredIds.some(id=>!Object.hasOwn(members,id)))fail('全画像の設定が揃っていません');}
+ if(v2&&npcToSprite){const ids=Object.keys(npcToSprite);if(Object.keys(v2.npcToSprite).length!==ids.length||ids.some(id=>v2.npcToSprite[id]!==npcToSprite[id]))fail('NPCと画像の対応が一致しません');}
+ if(manifestBytes&&!v2){
   if(manifestBytes.length>65536)fail('設定ファイルが大きすぎます');
   try{const data=JSON.parse(decoder.decode(manifestBytes));if(data.schema!==1||!data.members||typeof data.members!=='object'||Array.isArray(data.members))throw Error();members=data.members;}catch{fail('npc-images.json が不正です');}
   if(Object.keys(members).length!==requiredIds.length||requiredIds.some(id=>!Object.hasOwn(members,id)))fail('全員分の設定が揃っていません');
@@ -79,12 +81,14 @@ export async function prepareNpcZip(blob,requiredIds,decodeImage=globalThis.crea
   if(typeof filename!=='string'||!([id+'.png',id+'.webp'].includes(filename))||!zip.names.includes(filename))fail(id+' の画像が見つかりません');
   const bytes=await zip.read(filename),type=filename.endsWith('.png')?'image/png':'image/webp';
   if(type==='image/png'?!png(bytes):!webp(bytes))fail(id+' はPNG/WebP画像ではありません');
+  if(v2&&(type!=='image/png'||bytes.length<26||bytes[25]!==6||spec.columns!==2||spec.rows!==2))fail(id+' はRGBAの4コマPNGではありません');
   const image=new Blob([bytes],{type});
   let bitmap;
   try{
    bitmap=await decodeImage(image);
    const {width,height}=bitmap;
    if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width*height>MAX_PIXELS)fail(id+' の画像が大きすぎます');
+   if(v2&&(width!==height||width%2))fail(id+' は偶数辺の正方形ではありません');
    records.push({id,blob:image,width,height,rect:rectangle(width,height,spec),columns:spec.columns??1,rows:spec.rows??1});
   }catch(e){if(String(e?.message).startsWith('画像ZIP:'))throw e;fail(id+' の画像を開けません');}
   finally{bitmap?.close?.();}
