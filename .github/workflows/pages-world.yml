@@ -1,8 +1,7 @@
 name: Publish GitHub Pages
 on:
   push:
-    branches: [feature/mt-ghp-zip-01-r1]
-    paths: ['.github/workflows/pages-world.yml']
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
