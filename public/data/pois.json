@@ -1,0 +1,141 @@
+{
+  "schema": 1,
+  "sources": [
+    {
+      "id": "synthetic",
+      "provider": "Fictional demo",
+      "url": "https://example.com/fictional",
+      "licence": "CC0-1.0",
+      "licenceURL": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": "Fictional sample data",
+      "retrievedAt": "2026-10-24T00:00:00Z"
+    }
+  ],
+  "points": [
+    {
+      "id": "fictional:park",
+      "category": "park",
+      "name": "架空の公園",
+      "tileId": "north",
+      "position": [
+        -60,
+        20.483514231999997,
+        -50
+      ],
+      "marker": {
+        "enabled": true,
+        "priority": 1,
+        "range": 750
+      },
+      "biomeTags": [
+        "park"
+      ],
+      "eventTags": [],
+      "source": {
+        "id": "synthetic",
+        "feature": "fictional:park",
+        "url": "https://example.com/fictional"
+      }
+    },
+    {
+      "id": "fictional:shrine",
+      "category": "shrine",
+      "name": "架空の神社",
+      "tileId": "north",
+      "position": [
+        80,
+        21.175090863999998,
+        -50
+      ],
+      "marker": {
+        "enabled": true,
+        "priority": 1,
+        "range": 750
+      },
+      "biomeTags": [
+        "shrine"
+      ],
+      "eventTags": [],
+      "source": {
+        "id": "synthetic",
+        "feature": "fictional:shrine",
+        "url": "https://example.com/fictional"
+      }
+    },
+    {
+      "id": "fictional:bridge",
+      "category": "bridge",
+      "name": "架空の橋",
+      "tileId": "north",
+      "position": [
+        0,
+        20.78433912,
+        45
+      ],
+      "marker": {
+        "enabled": true,
+        "priority": 1,
+        "range": 750
+      },
+      "biomeTags": [
+        "bridge"
+      ],
+      "eventTags": [],
+      "source": {
+        "id": "synthetic",
+        "feature": "fictional:bridge",
+        "url": "https://example.com/fictional"
+      }
+    },
+    {
+      "id": "fictional:water",
+      "category": "water",
+      "name": "架空の池",
+      "tileId": "north",
+      "position": [
+        -95,
+        20.25009704,
+        110
+      ],
+      "marker": {
+        "enabled": true,
+        "priority": 1,
+        "range": 750
+      },
+      "biomeTags": [
+        "water"
+      ],
+      "eventTags": [],
+      "source": {
+        "id": "synthetic",
+        "feature": "fictional:water",
+        "url": "https://example.com/fictional"
+      }
+    },
+    {
+      "id": "fictional:civic",
+      "category": "civic",
+      "name": "架空の広場",
+      "tileId": "north",
+      "position": [
+        105,
+        21.1875307152,
+        135
+      ],
+      "marker": {
+        "enabled": true,
+        "priority": 1,
+        "range": 750
+      },
+      "biomeTags": [
+        "civic"
+      ],
+      "eventTags": [],
+      "source": {
+        "id": "synthetic",
+        "feature": "fictional:civic",
+        "url": "https://example.com/fictional"
+      }
+    }
+  ]
+}

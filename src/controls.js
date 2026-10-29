@@ -1,3 +1,6 @@
+import {radialStick} from '../lib/gamepad.mjs';
+
+const GAMEPAD_MESSAGE = 'dreamcore:gamepad-v2';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const keyFor=e=>e.key.toLowerCase();
 
@@ -5,29 +8,100 @@ const keyFor=e=>e.key.toLowerCase();
  * Return intention only; the deterministic movement system owns position and collision.
  * Mobile: left thumb for movement, drag on canvas for looking, right thumb to run.
  */
-export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,isActive=()=>true}){
+export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,onModeToggle=()=>{},onInteract=()=>{},onTap=()=>{},onBack=()=>{},onCharacter=()=>{},onMapControl=()=>{},onMapZoom=()=>{},onMenu=()=>{},onMenuMove=()=>{},onMenuAdjust=()=>{},onActivity=()=>{},isActive=()=>true}){
   const abort=new AbortController(),{signal}=abort;
-  const keys=new Set(),pressed=new Map();
+  const keys=new Set(),pressed=new Map();let inputMode='walk';const modeForKeys=()=>inputMode;
   let joyId=null,runId=null,runHeld=false,joyX=0,joyY=0;
   const lookPointers=new Map();
-  let pinchDistance=null;
+  let pinchDistance=null,tap=null;
   const listen=(target,type,handler,options={})=>target.addEventListener(type,handler,{...options,signal});
+  let menuDirection=0;let padSignature='',padArmed=false,padButtons=[],padX=0,padY=0,padRun=false,padActive=false;
+  const cursorMode=()=> 'off',captureA=()=>true;
+  // The DreamCore parent still relays A, but must never generate a virtual click.
+  window.__dreamcoreGamepadCursorMode=cursorMode;
+  window.__dreamcoreGamepadCaptureA=captureA;
+  function resetGamepad(){
+    padSignature='';padArmed=false;padButtons=[];
+    padX=padY=0;padRun=padActive=false;
+  }
+  function getPad(){
+    if(!('getGamepads' in navigator))return null;
+    try{
+      return Array.from(navigator.getGamepads()||[]).find(p=>p?.connected&&p.mapping==='standard')||null;
+    }catch{return null;}
+  }
+  listen(window,'message',e=>{
+    if(window.parent===window||e.source!==window.parent||e.origin!==location.origin||
+      e.data?.type!==GAMEPAD_MESSAGE)return;
+    if(e.data.action==='release-all'){resetInput();resetGamepad();return;}
+    if(e.data.action==='button'&&e.data.button===0&&e.data.phase==='down'&&padArmed){
+      onActivity('pad');onInteract();
+    }
+  });
+  function pollGamepad(dt,mode='walk'){
+    if(inputMode!==mode){padRun=false;inputMode=mode;}if(document.hidden){resetGamepad();return;}
+    if(mode==='map'&&keys.size)onMapControl({moveX:(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0),moveY:(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)},Math.min(dt,.05));
+    const pad=getPad();
+    if(!pad){resetGamepad();return;}
+    const signature=pad.index+':'+pad.id+':'+pad.mapping;
+    if(signature!==padSignature){resetGamepad();padSignature=signature;}
+    const left=radialStick(pad.axes?.[0],pad.axes?.[1]);
+    const right=radialStick(pad.axes?.[2],pad.axes?.[3]);
+    const buttons=Array.from(pad.buttons||[],b=>!!(b?.pressed||b?.value>0.5));
+    if(!padArmed){
+      if(!buttons.some(Boolean)&&!left.x&&!left.y&&!right.x&&!right.y)padArmed=true;
+      padButtons=buttons;
+      return;
+    }
+    padX=left.x;padY=left.y;padActive=Math.hypot(padX,padY)>0;
+
+    const seconds=clamp(Number.isFinite(dt)?dt:0,0,0.05);
+    if(buttons.some(Boolean)||left.x||left.y||right.x||right.y)onActivity('pad');
+    if(mode==='walk'){
+      if(isActive()&&seconds&&(right.x||right.y))onLook(-right.x*1.8*seconds,-right.y*1.1*seconds);
+    }else if(mode==='map'){
+      onMapControl({moveX:left.x,moveY:left.y},seconds);
+    }
+    // Standalone mode samples A locally; in DreamCore the parent owns edges.
+    if(window.parent===window&&buttons[0]&&!padButtons[0])onInteract();
+    if(buttons[2]&&!padButtons[2])onModeToggle();
+    if(buttons[1]&&!padButtons[1])onBack();
+    if(mode==='walk'&&isActive()){
+      if(buttons[10]&&!padButtons[10])padRun=!padRun;
+      if(buttons[4]&&!padButtons[4])onCharacter('cat');
+      if(buttons[5]&&!padButtons[5])onCharacter('rabbit');
+    }else if(mode==='map'){
+      if(buttons[4]&&!padButtons[4])onMapZoom(-1);
+      if(buttons[5]&&!padButtons[5])onMapZoom(1);
+    }else if(mode==='menu'){
+      if(buttons[12]&&!padButtons[12])onMenuMove(-1);
+      if(buttons[13]&&!padButtons[13])onMenuMove(1);
+      if(buttons[14]&&!padButtons[14])onMenuAdjust(-5);
+      if(buttons[15]&&!padButtons[15])onMenuAdjust(5);
+      const vertical=left.y>.55?1:left.y<-.55?-1:0;
+      if(vertical&&vertical!==menuDirection)onMenuMove(vertical);menuDirection=vertical;
+    }
+    if(buttons[9]&&!padButtons[9])onMenu();
+    padButtons=buttons;
+  }
+  listen(window,'gamepaddisconnected',resetGamepad);
   const movementKeys=new Set(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','shift']);
   listen(window,'keydown',e=>{
-    const key=keyFor(e);
+    const key=keyFor(e);if(e.target?.matches?.('input,select,textarea')||inputMode==='menu') {if(key==='escape')onBack();return;}onActivity('keyboard');
+    if(!e.repeat&&!e.ctrlKey&&!e.altKey&&!e.metaKey){if(key==='e'){onInteract();e.preventDefault();}if(key==='m'||key==='x'){onModeToggle();e.preventDefault();}if(key==='escape')onBack();if(key==='c'){onCharacter();e.preventDefault();}if(key==='enter'&&modeForKeys()==='map'){onInteract();e.preventDefault();}}
     if(e.repeat&&keys.has(key))return;
-    if(isActive()&&movementKeys.has(key)&&!e.ctrlKey&&!e.altKey&&!e.metaKey){
+    if(movementKeys.has(key)&&!e.ctrlKey&&!e.altKey&&!e.metaKey){
       keys.add(key);e.preventDefault();
     }
   });
   listen(window,'keyup',e=>{keys.delete(keyFor(e));});
   function resetInput(){
-    keys.clear();pressed.clear();lookPointers.clear();pinchDistance=null;
+    keys.clear();pressed.clear();lookPointers.clear();pinchDistance=null;tap=null;
     joyId=null;runId=null;runHeld=false;joyX=joyY=0;
     knob.style.transform='translate(0px, 0px)';runButton.classList.remove('holding');
   }
-  listen(window,'blur',resetInput);
-  listen(document,'visibilitychange',()=>{if(document.hidden)resetInput();});
+  listen(window,'blur',()=>{resetInput();resetGamepad();});
+  listen(document,'visibilitychange',()=>{if(document.hidden){resetInput();resetGamepad();}});
   const updateJoystick=e=>{
     const rect=joystick.getBoundingClientRect(),max=Math.max(1,(rect.width-knob.offsetWidth)/2);
     const centerX=rect.left+rect.width/2,centerY=rect.top+rect.height/2;
@@ -36,8 +110,8 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,is
     joyX=ox/max;joyY=-oy/max;knob.style.transform=`translate(${ox}px, ${oy}px)`;
   };
   listen(joystick,'pointerdown',e=>{
-    if(joyId!==null)return;
-    joyId=e.pointerId;pressed.set('joystick',e.pointerId);
+    if(!isActive()||joyId!==null)return;
+    onActivity('touch');joyId=e.pointerId;pressed.set('joystick',e.pointerId);
     joystick.setPointerCapture(e.pointerId);updateJoystick(e);e.preventDefault();
   });
   listen(joystick,'pointermove',e=>{if(e.pointerId===joyId){updateJoystick(e);e.preventDefault();}});
@@ -46,7 +120,7 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,is
   listen(joystick,'pointercancel',stopJoy);
   listen(joystick,'lostpointercapture',stopJoy);
   listen(runButton,'pointerdown',e=>{
-    runId=e.pointerId;runHeld=true;runButton.classList.add('holding');
+    if(!isActive())return;onActivity('touch');runId=e.pointerId;runHeld=true;runButton.classList.add('holding');
     runButton.setPointerCapture(e.pointerId);e.preventDefault();
   });
   const stopRun=e=>{if(e.pointerId===runId){runId=null;runHeld=false;runButton.classList.remove('holding');}};
@@ -57,12 +131,14 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,is
   }
   listen(canvas,'pointerdown',e=>{
     if(!isActive()||(e.pointerType==='mouse'&&e.button!==0))return;
-    lookPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    if(lookPointers.size>=2)pinchDistance=distanceOfTwo();
+    onActivity(e.pointerType==='touch'?'touch':'mouse');lookPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(lookPointers.size===1)tap={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now()};
+    else{tap=null;pinchDistance=distanceOfTwo();}
     canvas.setPointerCapture(e.pointerId);e.preventDefault();
   });
   listen(canvas,'pointermove',e=>{
-    if(!lookPointers.has(e.pointerId))return;
+    if(!isActive()||!lookPointers.has(e.pointerId))return;
+    if(tap&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)>8)tap=null;
     const old=lookPointers.get(e.pointerId),dx=e.clientX-old.x,dy=e.clientY-old.y;
     lookPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(lookPointers.size===1){onLook(-dx*0.006,-dy*0.0045);}
@@ -73,7 +149,10 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,is
     e.preventDefault();
   });
   const stopLook=e=>{
-    lookPointers.delete(e.pointerId);pinchDistance=lookPointers.size>=2?distanceOfTwo():null;
+    const accept=e.type==='pointerup'&&lookPointers.has(e.pointerId)&&tap?.id===e.pointerId&&
+      lookPointers.size===1&&performance.now()-tap.time<=500&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<=8&&isActive();
+    tap=null;lookPointers.delete(e.pointerId);pinchDistance=lookPointers.size>=2?distanceOfTwo():null;
+    if(accept)onTap(e.clientX,e.clientY,canvas.getBoundingClientRect());
   };
   listen(canvas,'pointerup',stopLook);listen(canvas,'pointercancel',stopLook);listen(canvas,'lostpointercapture',stopLook);
   listen(canvas,'wheel',e=>{if(!isActive())return;onZoom(Math.exp(e.deltaY*0.001));e.preventDefault();},{passive:false});
@@ -81,12 +160,19 @@ export function createGameInput({canvas,joystick,knob,runButton,onLook,onZoom,is
     getIntent(){
       if(!isActive())return {forward:0,right:0,run:false};
       return {
-        forward:(keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+joyY,
-        right:(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+joyX,
-        run:keys.has('shift')||runHeld
+        forward:padActive?-padY:
+          (keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+joyY,
+        right:padActive?padX:
+          (keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+joyX,
+        run:keys.has('shift')||runHeld||padRun
       };
     },
-    reset:resetInput,
-    destroy(){abort.abort();resetInput();}
+    pollGamepad,
+    reset(){resetInput();resetGamepad();},
+    destroy(){
+      abort.abort();resetInput();resetGamepad();
+      if(window.__dreamcoreGamepadCursorMode===cursorMode)delete window.__dreamcoreGamepadCursorMode;
+      if(window.__dreamcoreGamepadCaptureA===captureA)delete window.__dreamcoreGamepadCaptureA;
+    }
   };
 }

@@ -1,25 +1,11 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { integrateGameHtml } from './production-html.mjs';
+import { validateSyncManifest } from './sync-manifest.mjs';
+import { validateSiteConfig } from '../lib/site-config.mjs';
 
 const DEFAULT_PUBLIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-
-function relativePath(input) {
-  if (typeof input !== 'string' || !input || input.includes('\\') || input.includes('\0')) {
-    throw new Error('Invalid path in sync manifest');
-  }
-  const normalized = path.posix.normalize(input);
-  if (normalized !== input || input.startsWith('/') || input.startsWith('./') ||
-      input === '.' || input === '..' || input.startsWith('../') ||
-      input.split('/').some(part => !part || part === '.git' || part === 'node_modules')) {
-    throw new Error('Unsafe path in sync manifest: ' + input);
-  }
-  return input;
-}
-
-function intersects(a, b) {
-  return a === b || a.startsWith(b + '/') || b.startsWith(a + '/');
-}
 
 function isWithin(parent, child) {
   const rel = path.relative(parent, child);
@@ -43,34 +29,30 @@ async function safeCopy(from, to, relative = null, exclusions = []) {
   }
 }
 
+const DATA_EXTENSIONS = new Set(['.json']);
+const ASSET_EXTENSIONS = new Set(['.json', '.txt', '.png', '.jpg', '.jpeg', '.webp', '.glb', '.bin', '.ogg', '.mp3', '.wav', '.ktx2']);
+
+async function assertPrivateRuntimeData(root, relative) {
+  const filename = path.join(root, relative);
+  const stat = await fs.lstat(filename);
+  if (stat.isSymbolicLink()) throw new Error('Private data symlink refused: ' + relative);
+  if (stat.isDirectory()) {
+    for (const name of await fs.readdir(filename)) {
+      await assertPrivateRuntimeData(root, relative + '/' + name);
+    }
+    return;
+  }
+  if (!stat.isFile()) throw new Error('Unsupported private data entry: ' + relative);
+  const allowed = relative.startsWith('public/data/') ? DATA_EXTENSIONS : ASSET_EXTENSIONS;
+  if (!allowed.has(path.extname(relative).toLowerCase())) {
+    throw new Error('Executable or unsupported PRIVATE runtime file refused: ' + relative);
+  }
+}
+
 async function assertDirectory(dir, title) {
   const stat = await fs.lstat(dir);
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(title + ' must be a directory');
   return await fs.realpath(dir);
-}
-
-function validateManifest(data) {
-  if (!data || data.schemaVersion !== 1 || !Array.isArray(data.privatePaths) ||
-      !Array.isArray(data.publicPaths) || !Array.isArray(data.protectedPaths)) {
-    throw new Error('Sync manifest must contain schemaVersion=1 and three path arrays');
-  }
-  for (const group of ['privatePaths', 'publicPaths', 'protectedPaths']) {
-    const paths = data[group].map(relativePath);
-    if (new Set(paths).size !== paths.length) throw new Error('Duplicate ' + group + ' entry');
-    data[group] = paths;
-  }
-  if (!data.privatePaths.length || !data.publicPaths.length || !data.protectedPaths.length) {
-    throw new Error('Empty path arrays are not allowed');
-  }
-  for (const item of data.publicPaths) {
-    if (data.protectedPaths.some(protectedPath => item === protectedPath || item.startsWith(protectedPath + '/'))) {
-      throw new Error('Public update overlaps private-protected path: ' + item);
-    }
-    if (!data.privatePaths.some(base => intersects(base, item))) {
-      throw new Error('Public update outside staged private paths: ' + item);
-    }
-  }
-  return data;
 }
 
 /**
@@ -90,8 +72,12 @@ export async function assembleProduction({ publicRoot = DEFAULT_PUBLIC_ROOT, pri
   }
   const configFile = path.resolve(manifestPath || path.join(privateDir, 'production-public-sync.json'));
   if (!isWithin(privateDir, configFile)) throw new Error('Manifest must be inside private checkout');
-  const manifest = validateManifest(JSON.parse(await fs.readFile(configFile, 'utf8')));
+  const manifest = validateSyncManifest(JSON.parse(await fs.readFile(configFile, 'utf8')));
 
+  if (manifest.schemaVersion === 2) {
+    validateSiteConfig(JSON.parse(await fs.readFile(path.join(privateDir, 'public/data/site-config.json'), 'utf8')));
+    for (const item of manifest.privatePaths) await assertPrivateRuntimeData(privateDir, item);
+  }
   // Inspect all required paths before creating output. Never overwrite an existing directory.
   for (const item of manifest.privatePaths) await fs.lstat(path.join(privateDir, item));
   for (const item of manifest.publicPaths) await fs.lstat(path.join(publicDir, item));
@@ -103,11 +89,22 @@ export async function assembleProduction({ publicRoot = DEFAULT_PUBLIC_ROOT, pri
     if (error.code !== 'ENOENT') throw error;
   }
   await fs.mkdir(outputDir);
-  for (const item of manifest.privatePaths) {
-    await safeCopy(path.join(privateDir, item), path.join(outputDir, item));
-  }
-  for (const item of manifest.publicPaths) {
-    await safeCopy(path.join(publicDir, item), path.join(outputDir, item), item, manifest.protectedPaths);
+  if (manifest.schemaVersion === 2) {
+    // PUBLIC is the only runtime code/HTML/package owner; PRIVATE contributes data/assets.
+    for (const item of manifest.publicPaths) {
+      await safeCopy(path.join(publicDir, item), path.join(outputDir, item));
+    }
+    for (const item of manifest.privatePaths) {
+      await safeCopy(path.join(privateDir, item), path.join(outputDir, item));
+    }
+  } else {
+    // Legacy v1 is retained for existing release locks and rollback reproduction.
+    for (const item of manifest.privatePaths) {
+      await safeCopy(path.join(privateDir, item), path.join(outputDir, item));
+    }
+    for (const item of manifest.publicPaths) {
+      await safeCopy(path.join(publicDir, item), path.join(outputDir, item), item, manifest.protectedPaths);
+    }
   }
   for (const item of manifest.protectedPaths) {
     const original = path.join(privateDir, item);
@@ -124,7 +121,17 @@ export async function assembleProduction({ publicRoot = DEFAULT_PUBLIC_ROOT, pri
       throw new Error('Protected path type changed: ' + item);
     }
   }
-  return { outputDir, publicPaths: manifest.publicPaths, protectedPaths: manifest.protectedPaths };
+  // Only this manifest describes the private Michitanken host. Preserve its head
+  // and protected data while installing the PUBLIC UI required by its engine.
+  if (manifest.schemaVersion === 1 && manifest.protectedPaths.includes('index.html') && manifest.publicPaths.includes('src') && manifest.publicPaths.includes('lib')) {
+    const privateHtml = await fs.readFile(path.join(privateDir,'index.html'),'utf8');
+    const publicHtml = await fs.readFile(path.join(publicDir,'index.html'),'utf8');
+    await fs.writeFile(path.join(outputDir,'index.html'),integrateGameHtml(privateHtml,publicHtml));
+    await fs.mkdir(path.join(outputDir,'scripts'),{recursive:true});
+    await fs.copyFile(new URL('./production-html.mjs',import.meta.url),path.join(outputDir,'scripts/production-html.mjs'));
+    await fs.writeFile(path.join(outputDir,'vite.config.js'),"import {checkFile} from './scripts/production-html.mjs';\nexport default {plugins:[{name:'production-html-contract',async buildStart(){await checkFile(process.cwd());}}]};\n");
+  }
+  return { outputDir, schemaVersion: manifest.schemaVersion, publicPaths: manifest.publicPaths, protectedPaths: manifest.protectedPaths };
 }
 
 async function main(argv) {

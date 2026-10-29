@@ -1,0 +1,6 @@
+import * as THREE from 'three';
+export function createLandmarkFX(scene,baseElevation){
+ const active=[],geometry=new THREE.RingGeometry(.82,1,24);let time=0;const still=matchMedia('(prefers-reduced-motion: reduce)').matches||(navigator.deviceMemory&&navigator.deviceMemory<=2);
+ function effect(position,duration,radius){while(active.length){const a=active.pop();scene.remove(a.mesh);a.mesh.material.dispose();}const material=new THREE.MeshBasicMaterial({color:0xfff5df,transparent:true,opacity:.8,side:THREE.DoubleSide,depthWrite:false});const mesh=new THREE.Mesh(geometry,material);mesh.rotation.x=-Math.PI/2;mesh.position.set(position[0],position[1]-baseElevation+.12,position[2]);mesh.renderOrder=5;scene.add(mesh);active.push({mesh,start:time,duration,radius});}
+ return {discover(point){effect(point.position,.65,3);},arrive(position){effect(position,.35,1.5);},update(dt){time+=dt;for(let i=active.length-1;i>=0;i--){const a=active[i],t=(time-a.start)/a.duration;if(t>=1){scene.remove(a.mesh);a.mesh.material.dispose();active.splice(i,1);}else{a.mesh.scale.setScalar(a.radius*(still?1:1+t*2));a.mesh.material.opacity=still?.8:.8*(1-t);}}},dispose(){for(const a of active){scene.remove(a.mesh);a.mesh.material.dispose();}geometry.dispose();}};
+}

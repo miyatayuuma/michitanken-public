@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {buildingColors,cssColor} from '../lib/appearance.mjs';
 import {gridSample} from '../lib/geo.mjs';
 import {manifestBounds} from '../lib/tiles.mjs';
 
@@ -41,7 +42,7 @@ function makeCanvas(){
  * never retained by this atlas. Walking/close map tiles remain independent and
  * render above this deliberately recessed fallback geometry.
  */
-export function createWideOverview(manifest,baseElevation){
+export function createWideOverview(manifest,baseElevation,{colorsEnabled=true}={}){
  if(!Number.isFinite(baseElevation))throw Error('Invalid elevation datum');
  const bounds=manifestBounds(manifest),size=manifest.size;
  const cells=terrainCellsPerTile(manifest.tiles.length);
@@ -65,7 +66,7 @@ export function createWideOverview(manifest,baseElevation){
    ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke();
   }
  };
- function addTile(entry,field){
+ function addTile(entry,field,vegetation=null){
   if(seen.has(entry.id))throw Error('Duplicate wide atlas tile '+entry.id);
   if(!field?.terrain||field.size!==size)throw Error('Invalid wide atlas tile');
   seen.add(entry.id);
@@ -84,6 +85,14 @@ export function createWideOverview(manifest,baseElevation){
    const a=first+z*(cells+1)+x,b=a+1,c=a+cells+1,d=c+1;
    indices.push(a,c,b,b,c,d);
   }
+  // The existing fixed-size atlas acts as a ground-cover layer too:
+  // vegetation is painted before mapped blue water, without a fourth texture.
+  if(vegetation?.schema===1&&vegetation.tileId===entry.id)
+   for(const area of vegetation.areas||[]){
+    const colors={wood:'#487e54',grove:'#487e54',canopy:'#487e54',shrub:'#6c9060',scrub:'#6c9060',grass:'#8db777',park:'#77a66b'};
+    if(colors[area.kind]&&area.ring?.length>=3)
+     paintPath(sheets.water,entry,area.ring,{color:colors[area.kind],fill:true});
+   }
   for(const water of field.osm?.waterAreas||[])
    paintPath(sheets.water,entry,water.footprint,{color:'#4b9dc1',fill:true});
   for(const way of field.osm?.waterways||[]){
@@ -98,7 +107,7 @@ export function createWideOverview(manifest,baseElevation){
    if(!line.tunnel)paintPath(sheets.roads,entry,line.points,{color:'#5e6b6e',width:line.width||2.5});
   }
   for(const building of field.osm?.buildings||[])
-   paintPath(sheets.buildings,entry,building.footprint,{color:'#b47968',fill:true});
+   paintPath(sheets.buildings,entry,building.footprint,{color:cssColor(buildingColors(building,entry,colorsEnabled).roof),fill:true});
  }
  function finish(){
   if(seen.size!==manifest.tiles.length)throw Error('Incomplete wide atlas: '+seen.size+'/'+manifest.tiles.length);
@@ -115,7 +124,8 @@ export function createWideOverview(manifest,baseElevation){
    const texture=new THREE.CanvasTexture(sheet.canvas);
    texture.colorSpace=THREE.SRGBColorSpace;
    texture.anisotropy=1;
-   const material=new THREE.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,
+   const Material=name==='buildings'&&colorsEnabled?THREE.MeshLambertMaterial:THREE.MeshBasicMaterial;
+   const material=new Material({map:texture,transparent:true,depthWrite:false,
     side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2});
    const mesh=new THREE.Mesh(geometry,material);
    mesh.name='wide-overview-'+name;

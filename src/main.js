@@ -1,26 +1,51 @@
+import {setupCompass} from './compass.js';
+import {applySiteConfig} from './site-config.js';
+import {setupNotebook,icon,iconButton} from './notebook-ui.js';
+import {compassBearing,unwrapAngle} from '../lib/map-view.mjs';
+import {createWarpRegistry,canWarp,requiredLandingTiles,validateLanding,createWarpController} from '../lib/warp.mjs';
+import {createLandmarkFX} from './landmark-fx.js';
+import {createExplorationMap} from './exploration-map.js';
+import {createMichiSound} from './sound.js';
+import {createBiomeDebug} from './biome-debug.js';
+import {loadPoiRegistry,createPoiMarkers} from './poi-markers.js';
+import {addBuildings} from './buildings.js';
 import * as THREE from 'three';
-import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {gridSample} from '../lib/geo.mjs';
-import {buildRoadRibbon} from '../lib/road-surface.mjs';
+import {buildRoadRibbon,roadSurfaceOptions} from '../lib/road-surface.mjs';
+import {loadWaterProfiles,profilesForWaterField} from '../lib/water-profile-data.mjs';
+import {createSurfaceMeshLoader} from '../lib/surface-mesh.mjs';
+import {loadRoadSupplement,applyRoadSupplement} from '../lib/road-supplement.mjs';
 import {validateField} from '../lib/field.mjs';
 import {createCollisionWorld,chooseSpawn,advancePlayer,terrainHeight,blocked,collisionReason} from '../lib/navigation.mjs';
 import {createGameInput} from './controls.js';
 import {createWaterLayer} from './water.js';
-import {pointOnPath} from '../lib/water-field.mjs';
 import {validateManifest,createTiledWorld,registerTile,removeTile,tileAtPosition,distanceFromRect,PRELOAD_DISTANCE} from '../lib/tiles.mjs';
 import {createTileStreamer} from './tile-stream.js';
 import {fitGlobalWaterProfiles,profilesInLocalSpace} from '../lib/tile-water.mjs';
-import {overviewPose} from '../lib/overview.mjs';
-import {createWideOverview,wideOverviewNeeded} from './wide-overview.js';
-import {pixelRatioBudget,tileDetail,geometryStats,OVERVIEW_ROAD_STEP,FULL_ROAD_STEP} from '../lib/render-policy.mjs';
+import {pixelRatioBudget,tileDetail,geometryStats} from '../lib/render-policy.mjs';
+import {createVegetationRenderer,natureInstanceBudget} from './vegetation.js';
+import {createWildlifeRenderer} from './wildlife.js';
+import {createExploration} from './exploration.js';
+import {loadPlayerSprite} from './player-sprite.js';
+import {createNpcSystem} from './npc.js';
+import {KIKI_JIJI_DIALOGUES} from '../lib/npc.mjs';
+import {BOOK_GROUP_BY_ID} from '../lib/book-characters.mjs';
+import {validateNpcCatalog,resolveNpcPlacements} from '../lib/npc-catalog.mjs';
+import {renderedFootHeight} from '../lib/avatar-ground.mjs';
 import './style.css';
-const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.querySelector('#details');
+const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.createElement('aside');
+const notebook=setupNotebook();document.querySelector('#retry').onclick=()=>location.reload();
 let renderer,controls,scene,camera,frame=0;
 const localY=(field,x,z)=>gridSample(field.terrain,x,z)-field.terrain.min;
 function geometryFromTriangles(triangles){
  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(triangles,3));g.computeVertexNormals();return g;
 }
 function addTerrain(field,parent){
+ if(field.surface?.terrain){
+  const data=field.surface.terrain,g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(data.positions,3));g.setIndex(data.indices);g.computeVertexNormals();
+  parent.add(new THREE.Mesh(g,new THREE.MeshLambertMaterial({color:0x7da88a,side:THREE.DoubleSide})));return;
+ }
  const {terrain}=field,{count,size,elevations}=terrain,vertices=[],uv=[],index=[];
  for(let z=0;z<count;z++)for(let x=0;x<count;x++){
   vertices.push(-size/2+x*size/(count-1),elevations[z*count+x]-terrain.min,-size/2+z*size/(count-1));uv.push(x/(count-1),z/(count-1));
@@ -76,13 +101,12 @@ function addTileBorder(field,parent,entry){
 }
 function addRoads(field,parent,layerSet,detail='full'){
  const group=new THREE.Group();group.name='roads';const batches={road:[],path:[],railway:[],bridge:[]};
- const step=detail==='overview'?OVERVIEW_ROAD_STEP:FULL_ROAD_STEP;
  for(const road of field.osm.roads){
   const kind=road.bridge?'bridge':['footway','path','steps','pedestrian','cycleway'].includes(road.kind)?'path':'road';
-  for(let i=1;i<road.points.length;i++)batches[kind].push(...buildRoadRibbon(road.points[i-1],road.points[i],road.width,field,road.bridge ? .40 : .23,{alongStep:step,acrossStep:detail==='overview'?8:2.4,terrainSafe:detail==='overview'}));
+  for(let i=1;i<road.points.length;i++)batches[kind].push(...buildRoadRibbon(road.points[i-1],road.points[i],road.width,field,road.bridge ? .40 : .23,roadSurfaceOptions(detail)));
  }
  for(const railway of field.osm.railways||[])if(!railway.tunnel)for(let i=1;i<railway.points.length;i++)
-  batches.railway.push(...buildRoadRibbon(railway.points[i-1],railway.points[i],railway.width||2.5,field,railway.bridge?2.8:.31,{alongStep:step,acrossStep:detail==='overview'?8:2.4,terrainSafe:detail==='overview'}));
+  batches.railway.push(...buildRoadRibbon(railway.points[i-1],railway.points[i],railway.width||2.5,field,railway.bridge?2.8:.31,roadSurfaceOptions(detail)));
  for(const [type,verts] of Object.entries(batches)){
   if(!verts.length)continue;
   const colors={road:0xded8c5,path:0xedbb7a,railway:0x5e6b6e,bridge:0xeab878};
@@ -90,34 +114,6 @@ function addRoads(field,parent,layerSet,detail='full'){
   roadMesh.renderOrder=2;group.add(roadMesh);
  }
  parent.add(group);layerSet.roads=group;
-}
-function addBuildings(field,parent,layerSet,detail='full'){
- const group=new THREE.Group();group.name='buildings';
- const walls=[],roofs=[];
- for(const b of field.osm.buildings){
-  const p=b.footprint;if(p.length<3)continue;
-  const base=p.reduce((sum,[x,z])=>sum+localY(field,x,z),0)/p.length,bottom=base+.15,top=base+b.height;
-  if(detail==='overview'){
-   // Tiny distant buildings need roofs, not hundreds of unseen wall triangles.
-   const xs=p.map(v=>v[0]),zs=p.map(v=>v[1]);
-   const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
-   if(maxX-minX<.05||maxZ-minZ<.05)continue;
-   roofs.push(minX,top,minZ,maxX,top,minZ,minX,top,maxZ,
-     maxX,top,minZ,maxX,top,maxZ,minX,top,maxZ);
-   continue;
-  }
-  const shape=new THREE.Shape();shape.moveTo(p[0][0],-p[0][1]);for(let i=1;i<p.length;i++)shape.lineTo(p[i][0],-p[i][1]);shape.closePath();
-  const roof=new THREE.ShapeGeometry(shape);roof.rotateX(-Math.PI/2);roof.translate(0,top,0);
-  const nongrid=roof.index?roof.toNonIndexed():roof;
-  roofs.push(...nongrid.getAttribute('position').array);if(nongrid!==roof)nongrid.dispose();roof.dispose();
-  for(let i=0;i<p.length;i++){const a=p[i],c=p[(i+1)%p.length];walls.push(
-   a[0],bottom,a[1],c[0],bottom,c[1],a[0],top,a[1],
-   c[0],bottom,c[1],c[0],top,c[1],a[0],top,a[1]);
-  }
- }
- if(walls.length){const mesh=new THREE.Mesh(geometryFromTriangles(walls),new THREE.MeshLambertMaterial({color:0xd3d7cf,side:THREE.DoubleSide}));mesh.renderOrder=3;group.add(mesh);}
- if(roofs.length){const mesh=new THREE.Mesh(geometryFromTriangles(roofs),new THREE.MeshLambertMaterial({color:0xb47968,side:THREE.DoubleSide}));mesh.renderOrder=3;group.add(mesh);}
- parent.add(group);layerSet.buildings=group;
 }
 function makeAvatar(){
  const group=new THREE.Group();group.name='player-avatar';
@@ -132,7 +128,7 @@ function makeAvatar(){
  group.userData.type='player';
  return group;
 }
-async function init(north,manifest){
+async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,surfaceMeshes=null){
  validateManifest(manifest);
  container.dataset.appReady='false';
  scene=new THREE.Scene();scene.background=new THREE.Color(0xb7d7d9);scene.fog=new THREE.Fog(0xb7d7d9,500,1150);
@@ -144,13 +140,53 @@ async function init(north,manifest){
  container.dataset.renderPixelRatio=String(renderer.getPixelRatio());
  renderer.outputColorSpace=THREE.SRGBColorSpace;
  container.appendChild(renderer.domElement);
- scene.add(new THREE.HemisphereLight(0xf5faff,0x83917b,2.1));
+ const hemi=new THREE.HemisphereLight(0xf5faff,0x83917b,2.1);scene.add(hemi);
  const sun=new THREE.DirectionalLight(0xffffff,2);sun.position.set(-180,320,120);scene.add(sun);
+ const buildingLighting={sky:hemi.color.clone().multiplyScalar(hemi.intensity).toArray(),ground:hemi.groundColor.clone().multiplyScalar(hemi.intensity).toArray(),sun:sun.color.clone().multiplyScalar(sun.intensity).toArray(),direction:sun.position.clone().normalize().toArray()};
  const world=createTiledWorld(manifest);
+ let biomeDebug=null;
+ let poiRegistry=null,poiMarkers=null;
+ createBiomeDebug({scene,container,baseElevation:north.terrain.min,baseURL:import.meta.env.BASE_URL}).then(v=>{biomeDebug=v;}).catch(error=>{container.dataset.biomeError='true';console.warn(error);});
+ if(new URLSearchParams(location.search).get('markers')!=='off'){
+  try{
+   poiRegistry=await loadPoiRegistry({baseURL:import.meta.env.BASE_URL,manifest});
+   poiMarkers=createPoiMarkers({container,registry:poiRegistry,baseElevation:north.terrain.min,mobile:coarsePointer});
+  }catch(error){console.warn('Optional public markers unavailable:',error);container.dataset.poiError='true';}
+ }
  const visuals=new Map(),layerVisibility={roads:true,buildings:true};
+ const colorsEnabled=new URLSearchParams(location.search).get('colors')!=='off';
+ const natureColorsEnabled=new URLSearchParams(location.search).get('natureColors')!=='off';
  const flatWater=new URLSearchParams(location.search).get('water')==='flat';
- const wideMap=wideOverviewNeeded(manifest);
- let wideLayer=null;
+ const natureEnabled=new URLSearchParams(location.search).get('nature')!=='off';
+ const wildlifeEnabled=natureEnabled&&new URLSearchParams(location.search).get('wildlife')!=='off';
+ const natureRenderer=createVegetationRenderer({baseURL:import.meta.env.BASE_URL});
+ const exploration=new URLSearchParams(location.search).get('exploration')==='off'?null:createExploration({scene,container,baseURL:import.meta.env.BASE_URL,baseElevation:north.terrain.min,ground:(x,z)=>terrainHeight(world,x,z),onCollect:()=>sound.se('collect'),low:memoryGiB!==null&&memoryGiB<=2});
+ const wildlife=wildlifeEnabled?createWildlifeRenderer({
+   scene,baseURL:import.meta.env.BASE_URL,baseElevation:north.terrain.min,onDiscover:type=>exploration?.discover(type)
+ }):null;
+ async function vegetationOverlay(entry){
+   if(!natureEnabled)return null;
+   const response=await fetch(`${import.meta.env.BASE_URL}data/vegetation/${entry.id}.json`);
+   if(response.status===404||!response.headers.get('content-type')?.includes('json'))return null;
+   if(!response.ok)throw Error('Vegetation overlay HTTP '+response.status);
+   const data=await response.json();
+   if(data?.schema!==1||data.tileId!==entry.id||!Array.isArray(data.areas))
+     throw Error('Invalid mapped vegetation overlay '+entry.id);
+   // PRIVATE Nagoya aerial-photo-derived green cover is more precise than
+   // generic OSM park/landuse boundaries. Preserve explicit OSM tree nodes.
+   const municipal=await fetch(`${import.meta.env.BASE_URL}data/green-cover/${entry.id}.json`);
+   if(municipal.ok&&municipal.headers.get('content-type')?.includes('json')){
+     const cover=await municipal.json();
+     if(cover.schema===1&&cover.tileId===entry.id&&Array.isArray(cover.areas)&&cover.areas.length)
+       return {...data,areas:cover.areas};
+   }
+   return data;
+ }
+ const wideMap=false;
+ const wideLayer=null;
+ let map2d=null,warpRegistry=null,warpController=null;
+ const landmarkFX=createLandmarkFX(scene,north.terrain.min);
+ const sound=createMichiSound();
  let elapsed=0,streamer=null,playerState=null,mode='walk';
  const disposeObject=object=>{
    const materials=new Set(),geometries=new Set();
@@ -165,13 +201,16 @@ async function init(north,manifest){
  const nextFrame=()=>new Promise(resolve=>requestAnimationFrame(resolve));
  let lodQueue=Promise.resolve();
  const detailFor=entry=>tileDetail({
-   mode,x:playerState?.x??0,z:playerState?.z??0,entry,size:manifest.size,
+   mode:'walk',x:playerState?.x??0,z:playerState?.z??0,entry,size:manifest.size,
    camera:mode==='map'?camera.position:null
  });
  function updateLayerMetrics(){
    const mounted=[...visuals.values()];
    const stats=geometryStats(mounted);
    container.dataset.loadedTiles=[...visuals.keys()].join(',');
+   container.dataset.natureInstances=String(mounted.reduce((n,v)=>n+(v.nature?.userData.vegetationCount||0),0));
+   container.dataset.wildlifeCandidates=String(wildlife?.candidateCount||0);
+   container.dataset.wildlifeVisible=String(wildlife?.visibleCount||0);
    container.dataset.waterMaterial=flatWater?'flat':'procedural';
    container.dataset.waterMeshes=String(mounted.reduce((n,v)=>n+(v.water?.group.children.length||0),0));
    container.dataset.waterTriangles=String(stats.waterTriangles);
@@ -189,18 +228,21 @@ async function init(north,manifest){
    },0));
  }
  function currentWaterProfiles(){
+   if(fixedWaterProfiles)return fixedWaterProfiles;
    if(!streamer)return [];
    return fitGlobalWaterProfiles(streamer.getCached(),manifest);
  }
  function rebuildWater(visual,profiles=currentWaterProfiles()){
    if(visual.removed)return;
+   if(visual.field.surface&&visual.water)return; // immutable prepared domain, independent of tile cache/LOD
    const next=createWaterLayer(visual.field,{
-     flat:flatWater,detail:visual.level,sharedProfiles:profilesInLocalSpace(profiles,visual.entry)
+     flat:flatWater,detail:visual.level,requirePrepared:!!manifest.surfaceMeshes,sharedProfiles:profilesInLocalSpace(fixedWaterProfiles?profilesForWaterField(profiles,visual.field):profiles,visual.entry)
    });
    next.uniforms.uTime.value=elapsed;
    next.uniforms.uMotion.value=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches?0:1;
    if(visual.water){visual.root.remove(visual.water.group);disposeObject(visual.water.group);}
    visual.water=next;
+   wildlife?.setWaterProfiles(visual.entry.id,next.profiles);
    visual.root.add(next.group);
  }
  /** Refit only rivers sharing an OSM way with an acquired or removed tile. */
@@ -217,8 +259,8 @@ async function init(north,manifest){
  }
  function syncRoadDepth(layers){
    for(const road of layers.roads.children){
-     road.material.depthTest=mode!=='map';
-     road.material.depthWrite=mode!=='map';
+     road.material.depthTest=true;
+     road.material.depthWrite=true;
      road.material.needsUpdate=true;
    }
  }
@@ -234,13 +276,14 @@ async function init(north,manifest){
        addRoads(visual.field,temp,next,target);
        await nextFrame();
        if(visual.removed){disposeObject(temp);break;}
-       addBuildings(visual.field,temp,next,target);
+       // Buildings keep exact footprints and static lighting across road LOD changes.
+       next.buildings=visual.layers.buildings;
        await nextFrame();
        if(visual.removed||visual.requestedLevel!==target){
          disposeObject(temp);continue;
        }
        visual.root.remove(visual.layers.roads,visual.layers.buildings);
-       disposeObject(visual.layers.roads);disposeObject(visual.layers.buildings);
+       disposeObject(visual.layers.roads);
        visual.layers.roads=next.roads;visual.layers.buildings=next.buildings;
        visual.root.add(next.roads,next.buildings);
        visual.level=target;
@@ -261,14 +304,28 @@ async function init(north,manifest){
    const visible=visuals.size;
    const bounds=world.bounds;
    const label=(bounds.maxX-bounds.minX)+'m × '+(bounds.maxZ-bounds.minZ)+'m';
-   const prefix=mode==='map'?'全域 '+label+' · ':'架空のデモ地形を表示中 · ';
+   const prefix=mode==='map'?'全域 '+label+' · ':(container.dataset.fieldLabel||'フィールドを表示中')+' · ';
    const progressLabel=wideMap&&mode==='map'&&wideLayer
      ?'広域 '+wideLayer.loadedTiles+'/'+manifest.tiles.length+' · 詳細 '+visible
      :'読込 '+visible+'/'+manifest.tiles.length;
-   status.textContent=container.dataset.appReady==='false'
-     ?'3Dフィールドを準備中 · 読込 '+visible+'/'+manifest.tiles.length
-     :prefix+progressLabel+' · '+current+progress+error;
+   status.textContent=container.dataset.appReady==='false'?'じゅんびしています…':snapshot.errors.length?'読みこめませんでした':'';
+   document.querySelector('#retry').hidden=!snapshot.errors.length;
    status.classList.toggle('failed',!!snapshot.errors.length);
+   status.hidden=container.dataset.appReady!=='false'&&!snapshot.errors.length;
+ }
+ async function mountVegetation(visual){
+   if(!natureEnabled)return;
+   try{
+     const overlay=await vegetationOverlay(visual.entry);
+     if(visual.removed||!overlay)return;
+     wildlife?.register(visual.entry,visual.field,overlay);
+     const group=await natureRenderer.build(visual.entry,visual.field,overlay,{maxTotal:natureInstanceBudget({coarsePointer,memoryGiB}),individualColors:natureColorsEnabled});
+     if(visual.removed){disposeObject(group);return;}
+     if(!group.userData.vegetationCount)return;
+     visual.nature=group;visual.root.add(group);updateLayerMetrics();
+   }catch(error){
+     if(!visual.removed)console.warn('Optional mapped vegetation unavailable:',visual.entry.id,error);
+   }
  }
  async function mount(entry,field){
    // Stagger terrain, roads, buildings and water uploads over separate RAFs.
@@ -279,7 +336,7 @@ async function init(north,manifest){
    await nextFrame();
    addRoads(field,root,layers,level);
    await nextFrame();
-   addBuildings(field,root,layers,level);
+   addBuildings(field,root,layers,level,entry,colorsEnabled,buildingLighting);
    await nextFrame();
    addCrossingMarkers(field,root,layers);
    layers.outline=addTileBorder(field,root,entry);
@@ -288,17 +345,20 @@ async function init(north,manifest){
    layers.roads.visible=layerVisibility.roads;
    layers.buildings.visible=layerVisibility.buildings;
    registerTile(world,entry,field);
+   void exploration?.register(entry);
    root.position.set(entry.offset[0],field.terrain.min-world.baseElevation,entry.offset[1]);
    scene.add(root);
    const maxHeight=Math.max(40,...field.osm.buildings.map(b=>b.height));
    const h=manifest.size/2;
+   const surfaceMin=field.surface?.terrain?.positions.reduce((n,v,i)=>i%3===1?Math.min(n,v):n,Infinity)??Infinity;
    const bounds=new THREE.Box3(
-     new THREE.Vector3(entry.offset[0]-h,field.terrain.min-world.baseElevation-3,entry.offset[1]-h),
+     new THREE.Vector3(entry.offset[0]-h,field.terrain.min-world.baseElevation+Math.min(-3,surfaceMin-1),entry.offset[1]-h),
      new THREE.Vector3(entry.offset[0]+h,field.terrain.max-world.baseElevation+maxHeight+3,entry.offset[1]+h)
    );
    const visual={entry,field,root,layers,level,requestedLevel:level,bounds,
-     lodQueued:false,removed:false,water:null};
+     lodQueued:false,removed:false,water:null,nature:null};
    visuals.set(entry.id,visual);
+   void mountVegetation(visual);
    refreshWater({entry,field});
    updateDetails();
    // Mode can change while a tile is being created.
@@ -307,47 +367,144 @@ async function init(north,manifest){
  }
  function unmount(entry,visual){
    visual.removed=true;
+   wildlife?.unregister(entry.id);exploration?.unregister(entry.id);
    visuals.delete(entry.id);
    removeTile(world,entry.id);
    scene.remove(visual.root);disposeObject(visual.root);
    refreshWater({entry,field:visual.field});
    updateDetails();
  }
- function updateDetails(){
-   const fields=[...visuals.values()].map(v=>v.field);
-   const b=world.bounds;
-   details.textContent=`対象 ${b.maxX-b.minX}m × ${b.maxZ-b.minZ}m · 読込 ${fields.length}/${manifest.tiles.length} · 道路 ${fields.reduce((a,v)=>a+v.osm.roads.length,0)}区間 · 建物 ${fields.reduce((a,v)=>a+v.osm.buildings.length,0)}棟 · 線路 ${fields.reduce((a,v)=>a+v.osm.railways.length,0)}区間 · 水路 ${fields.reduce((a,v)=>a+v.osm.waterways.length,0)}区間`;
- }
+ function updateDetails(){}
  streamer=createTileStreamer({
    manifest,
    fetchTile:async entry=>{
      if(entry.id==='north')return north;
      const response=await fetch(`${import.meta.env.BASE_URL}${entry.url}`,{cache:'no-store'});
      if(!response.ok)throw Error(`タイル ${entry.id} の取得に失敗 (HTTP ${response.status})`);
-     const field=await response.json();validateField(field);return field;
+     const field=await response.json();validateField(field);return surfaceMeshes.attach(applyRoadSupplement(field,entry,roadSupplement),entry);
    },
    mount,unmount,onChange:reportStreaming
  });
  await streamer.ensure('north');
  const spawn=chooseSpawn(createCollisionWorld(north));
  playerState={...spawn,facing:spawn.yaw,moving:false,collided:false,distance:0};
- const avatar=makeAvatar();avatar.traverse(o=>{if(o.isMesh)o.renderOrder=4;});scene.add(avatar);
- const controls=new OrbitControls(camera,renderer.domElement);
+ const playerSprite=await loadPlayerSprite({baseURL:import.meta.env.BASE_URL});
+ const avatar=playerSprite?.group||makeAvatar();avatar.traverse(o=>{if(o.isMesh)o.renderOrder=4;});scene.add(avatar);
+ container.dataset.avatarKind=playerSprite?'sprite':'model';
+ // Optional host configuration keeps real-world locations out of PUBLIC source.
+ let npcGroups=[];
+ try{const response=await fetch(import.meta.env.BASE_URL+'data/npcs.json',{cache:'no-store'});if(response.ok&&response.headers.get('content-type')?.includes('json')){const config=await response.json();if(config.schema===1&&Array.isArray(config.groups))npcGroups=config.groups.map(g=>({...g,dialogues:g.dialogues||BOOK_GROUP_BY_ID[g.dialogueId||g.groupId]?.dialogues||(g.dialogueId==='kiki-jiji'?KIKI_JIJI_DIALOGUES:undefined)}));}}catch(error){console.warn('NPC configuration unavailable',error);}
+ if(new URLSearchParams(location.search).get('npcDemo')==='1'&&npcGroups.length===0){
+   // Development fixture, relative to the fictional initial spawn. Never used by default.
+   npcGroups=[{groupId:'kiki-jiji',spawnAnchor:[spawn.x-5*Math.sin(spawn.yaw),spawn.z-5*Math.cos(spawn.yaw)],spawnRadius:0,interactionRadius:7,displayRadius:65,movementMode:'fixed',members:[{id:'kiki',offset:[-1.4*Math.cos(spawn.yaw),1.4*Math.sin(spawn.yaw)],height:1.65},{id:'jiji',offset:[1.4*Math.cos(spawn.yaw),-1.4*Math.sin(spawn.yaw)],height:.7}],dialogues:KIKI_JIJI_DIALOGUES}];
+ }
+ // When the host has not supplied a location, derive a provisional pair near
+ // the initial spawn. Never store the resulting coordinates in public source.
+ if(npcGroups.length===0){
+   const roadClear=(x,z,r)=>{
+     for(const {entry,field} of world.tileWorlds.values()){
+       for(const road of field.osm.roads){
+         if(road.tunnel)continue;
+         for(let i=1;i<road.points.length;i++){
+           const a=road.points[i-1],b=road.points[i];
+           const ax=a[0]+entry.offset[0],az=a[1]+entry.offset[1];
+           const dx=b[0]-a[0],dz=b[1]-a[1],den=dx*dx+dz*dz;
+           const t=den?Math.max(0,Math.min(1,((x-ax)*dx+(z-az)*dz)/den)):0;
+           if(Math.hypot(x-ax-t*dx,z-az-t*dz)<(road.width||4)/2+r)return false;
+         }
+       }
+     }
+     return true;
+   };
+   const side=[Math.cos(spawn.yaw),-Math.sin(spawn.yaw)];
+   const offsets=[[-1.4*side[0],-1.4*side[1]],[1.4*side[0],1.4*side[1]]];
+   let chosen=null;
+   const rejected={road:0,collision:0,landing:0,path:0,error:0};
+   // Prefer positions in front of the initial camera; progressively widen search.
+   for(const distance of [6,8,10,12,16,20,25]){
+     for(const angle of [0,.25,-.25,.5,-.5,.8,-.8,1.2,-1.2,Math.PI]){
+       const x=spawn.x-distance*Math.sin(spawn.yaw+angle);
+       const z=spawn.z-distance*Math.cos(spawn.yaw+angle);
+       const memberPositions=offsets.map(([dx,dz])=>[x+dx,z+dz]);
+       let valid=true;
+       for(const [mx,mz] of memberPositions){
+         try{
+           if(!roadClear(mx,mz,1)){rejected.road++;valid=false;break;}
+           if(collisionReason(world,mx,mz,1)){rejected.collision++;valid=false;break;}
+           const y=terrainHeight(world,mx,mz)+world.baseElevation;
+           if(!validateLanding(world,{confirmed:true,gameSafety:'GAME_SAFE_CONFIRMED',clearance:1.5,position:[mx,y,mz],yaw:spawn.yaw}).ok){rejected.landing++;valid=false;break;}
+         }catch{rejected.error++;valid=false;break;}
+       }
+       if(!valid)continue;
+       // Keep the center reachable from the start in the loaded game geometry.
+       for(let t=.1;t<=1.001;t+=.1){
+         if(collisionReason(world,spawn.x+(x-spawn.x)*t,spawn.z+(z-spawn.z)*t,.7)){rejected.path++;valid=false;break;}
+       }
+       if(valid){chosen=[x,z];break;}
+     }
+     if(chosen)break;
+   }
+   if(chosen){
+     npcGroups=[{groupId:'kiki-jiji',spawnAnchor:chosen,spawnRadius:0,interactionRadius:7,displayRadius:65,movementMode:'fixed',members:[{id:'kiki',offset:offsets[0],height:1.65},{id:'jiji',offset:offsets[1],height:.7}],dialogues:KIKI_JIJI_DIALOGUES}];
+     container.dataset.npcPlacement='provisional';
+   }else{
+     container.dataset.npcPlacement='unavailable';
+     console.warn('NPC provisional placement unavailable; rejected candidate counts:',JSON.stringify(rejected));
+   }
+ }
+ // OPTIONAL PRIVATE catalog. Separates cast, voiced text and image ZIP packs
+ // from geography and PUBLIC engine. Existing installs retain their fallback.
+ let npcCatalog=null;
+ try{
+  const response=await fetch(import.meta.env.BASE_URL+'data/npc-catalog.json',{cache:'no-store'});
+  if(response.ok){
+   npcCatalog=validateNpcCatalog(await response.json());
+   npcGroups=resolveNpcPlacements(npcGroups,npcCatalog,{fallback:BOOK_GROUP_BY_ID});
+  }else if(response.status!==404)console.warn('NPC catalog HTTP',response.status);
+ }catch(error){npcCatalog=null;console.warn('NPC catalog unavailable; using previous dialogues',error);}
+ let npc=null;try{npc=createNpcSystem({scene,container,groups:npcGroups,ground:(x,z)=>terrainHeight(world,x,z),blocked:(x,z)=>!!collisionReason(world,x,z,.38),camera,onMeet:g=>map2d?.recordNpcMeet(g),imagePacks:npcCatalog?.spritePacks});npc.installSettings(document.querySelector('#notebook-menu'));}catch(error){console.warn('NPC disabled:',error);container.dataset.npcError='true';}
+ const controls={target:new THREE.Vector3(),update(){},dispose(){}};
  controls.enableDamping=true;controls.dampingFactor=.07;
  controls.maxPolarAngle=Math.PI/2.05;controls.minDistance=15;controls.maxDistance=9000;
  controls.screenSpacePanning=true;controls.enabled=false;
  let cameraYaw=spawn.yaw,cameraPitch=.52,cameraDistance=14;
- const coords=document.querySelector('#player-coords');
+ const coords=document.createElement('output');
  const modeButton=document.querySelector('#mode');
- const hint=document.querySelector('#hint');
+ const hint=document.createElement('span');
  const gameInput=createGameInput({
    canvas:renderer.domElement,joystick:document.querySelector('#joystick'),
    knob:document.querySelector('#joystick-knob'),runButton:document.querySelector('#run'),
-   isActive:()=>mode==='walk',
-   onLook(dx,dy){cameraYaw+=dx;cameraPitch=Math.min(1.1,Math.max(.2,cameraPitch+dy));},
-   onZoom(ratio){cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));}
+   isActive:()=>mode==='walk'&&!warpController?.busy&&!notebook.opened&&!npc?.talking,
+   onLook(dx,dy){if(mode!=='walk'||warpController?.busy)return;cameraYaw+=dx;cameraPitch=Math.min(1.1,Math.max(.2,cameraPitch+dy));},
+   onZoom(ratio){if(mode!=='walk'||warpController?.busy)return;cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));},
+   onModeToggle(){npc?.close();if(notebook.opened){notebook.close();return;}changeMode(mode==='walk'?'map':'walk');},
+   onTap(x,y,rect){if(mode==='walk'&&!warpController?.busy&&!notebook.opened){if(npc?.interactAt(x,y,rect)){gameInput.reset();return;}exploration?.collectAt(x,y,rect);}},
+   onInteract(){if(npc?.talking){npc.advance();return;}if(notebook.opened){notebook.activate();return;}sound.activate();if(warpController?.busy)return;if(mode==='map')map2d?.select();else if(!npc?.interactNearest())exploration?.collect();else gameInput.reset();},
+   onBack(){if(npc?.talking){npc.close();gameInput.reset();return;}if(notebook.opened){notebook.close();gameInput.reset();return;}if(warpController?.busy){warpController.cancel();return;}if(mode==='map'&&!map2d?.cancel())changeMode('walk');},
+   onCharacter(id){switchCharacter(id);},
+   onActivity(kind){sound.activate();if(kind)document.querySelector('#app').dataset.input=kind;},
+   onMapControl(input,dt){if(mode==='map')map2d?.move(input,dt);},
+   onMapZoom(delta){if(mode==='map')map2d?.zoomStep(delta);},
+   onMenu(){npc?.close();notebook.toggle();gameInput.reset();},onMenuMove:direction=>notebook.move(direction),onMenuAdjust:amount=>notebook.adjust(amount)
+
  });
- const avatarPosition=()=>{avatar.position.set(playerState.x,playerState.y,playerState.z);avatar.rotation.y=playerState.facing;};
+ notebook.onChange(()=>{if(notebook.opened)npc?.close();gameInput.reset();});
+ const onNpcEnter=e=>{if(e.key==='Enter'&&npc?.talking&&!e.repeat&&!e.target?.matches?.('button,input,textarea,select')){e.preventDefault();npc.advance();}};window.addEventListener('keydown',onNpcEnter);
+ let footCache=null;
+ const avatarPosition=()=>{
+   let y=playerState.y;
+   if(playerSprite){
+     const owner=tileAtPosition(manifest,playerState.x,playerState.z),tile=owner&&world.tileWorlds.get(owner.id);
+     if(tile){
+       if(!footCache||footCache.field!==tile.field||footCache.x!==playerState.x||footCache.z!==playerState.z)
+         footCache={field:tile.field,x:playerState.x,z:playerState.z,
+           y:renderedFootHeight(tile.field,playerState.x-owner.offset[0],playerState.z-owner.offset[1],world.baseElevation)};
+       y=footCache.y;
+     }
+   }
+   avatar.position.set(playerState.x,y,playerState.z);
+   if(!playerSprite)avatar.rotation.y=playerState.facing;
+ };
  function followCamera(dt,snap=false){
    const target=new THREE.Vector3(playerState.x,playerState.y+1.45,playerState.z);
    const horiz=cameraDistance*Math.cos(cameraPitch);
@@ -365,25 +522,7 @@ async function init(north,manifest){
    camera.position.lerp(desired,factor);
    controls.target.lerp(target,factor);camera.lookAt(controls.target);
  }
- const mapTarget=new THREE.Vector3();
- let overviewSequence=0,overviewAbort=null;
  container.dataset.overviewReady='false';
- function resetMap(){
-   const focusRiver=new URLSearchParams(location.search).get('view')==='river';
-   const visual=visuals.get('north');
-   if(focusRiver&&visual?.water?.profiles.length){
-     const path=visual.water.profiles[0],point=pointOnPath(path,path.length*.54);
-     const y=path.getHeight(path.length*.54)-world.baseElevation;
-     controls.target.set(point[0]+visual.entry.offset[0],y+1.3,point[1]+visual.entry.offset[1]);
-     camera.position.set(controls.target.x+41,y+39,controls.target.z+57);
-   }else{
-     const pose=overviewPose(manifest,container.clientWidth/Math.max(1,container.clientHeight),camera.fov,(north.terrain.max-north.terrain.min)/2);
-     mapTarget.set(...pose.target);
-     controls.target.copy(mapTarget);camera.position.set(...pose.position);
-     container.dataset.overviewExtent=pose.dimensions.join('x');
-   }
-   controls.update();
- }
  function updateHud(){
    const owner=tileAtPosition(manifest,playerState.x,playerState.z);
    coords.dataset.x=playerState.x.toFixed(3);
@@ -392,108 +531,50 @@ async function init(north,manifest){
    coords.dataset.tile=owner?.id||'outside';
    const labels={building:'建物',railway:'線路',waterway:'水路','water-area':'水域',boundary:'マップ境界',loading:'エリア読込待ち'};
    const contact=playerState.collided?` · ${labels[playerState.collision]||'障害物'}に接触`:'';
-   coords.textContent=`位置 X ${playerState.x.toFixed(1)}m / Z ${playerState.z.toFixed(1)}m · エリア ${owner?.id||'外'} · 標高 ${(playerState.y+world.baseElevation).toFixed(1)}m${contact}`;
+   coords.textContent='';
  }
  function resetWalk(){
+   playerSprite?.reset();
    playerState={...spawn,facing:spawn.yaw,moving:false,collided:false,distance:0};
    cameraYaw=spawn.yaw;cameraPitch=.52;cameraDistance=14;gameInput.reset();
    avatarPosition();followCamera(0,true);updateHud();streamer.update(playerState.x,playerState.z);
  }
  function changeMode(next){
-   mode=next;controls.enabled=next==='map';
-   // Fog was originally tuned for the 500m walking view (far=1150m).
-   // Full map camera sits ~1200m above the ground: without extending the
-   // fog plane, the new southern tile becomes invisible behind fog.
-   scene.fog.near=next==='map'?1500:500;
-   scene.fog.far=next==='map'?11000:1150;
-   if(overviewAbort){overviewAbort.abort();overviewAbort=null;}
-   // Do not keep atlas textures resident while the player is walking.
-   if(next==='walk'&&wideLayer){wideLayer.dispose();wideLayer=null;updateLayerMetrics();}
-   else if(wideLayer)wideLayer.group.visible=true;
-   for(const visual of visuals.values()){
-     visual.layers.outline.visible=next==='map';
-     syncRoadDepth(visual.layers);
-     scheduleDetail(visual,detailFor(visual.entry));
-   }
+   npc?.close();
+   if(warpController?.busy)warpController.cancel();
+   if(next==='map'&&!map2d)return;
+   mode=next;controls.enabled=false;gameInput.reset();accumulator=0;
    document.querySelector('#app').dataset.mode=mode;
-   modeButton.textContent=next==='walk'?'俯瞰':'歩く';
-   document.querySelector('#reset').textContent=next==='walk'?'位置を戻す':'全域表示';
-   modeButton.setAttribute('aria-label',next==='walk'?'俯瞰モードに切り替える':'歩行モードに切り替える');
-   modeButton.classList.toggle('selected',next==='walk');
-   hint.textContent=next==='walk'?'左スティック・WASDで移動 · ドラッグで視点 · Shift/「走る」でダッシュ':'ドラッグで回転 · 2本指・ホイールで拡大 · 右ドラッグで平行移動';
-   gameInput.reset();
-   overviewSequence++;
-   if(next==='map'){
-     resetMap();
-     container.dataset.overviewReady='false';
-     const sequence=overviewSequence;
-     // A close-up river diagnostic needs only its local tile; do not
-     // populate all nine GPU tiles during the textureless performance baseline.
-     const singleRiverView=new URLSearchParams(location.search).get('view')==='river';
-     overviewAbort=new AbortController();
-     const signal=overviewAbort.signal;
-     const startOverview=async()=>{
-       if(singleRiverView){await streamer.ensure('north');return;}
-       if(!wideMap){await streamer.ensureAll({concurrency:2,signal});return;}
-       if(wideLayer)return;
-       // One fixed-size fallback atlas covers the full map while only nearby
-       // tiles retain their normal detail/collision meshes.
-       const builder=createWideOverview(manifest,world.baseElevation);
-       await streamer.scanAll({concurrency:2,signal,onTile:async(entry,field)=>{
-         if(signal.aborted)return;
-         builder.addTile(entry,field);
-         await nextFrame();
-       }});
-       if(signal.aborted)return;
-       const finished=builder.finish();
-       wideLayer=finished;
-       finished.layers.roads.visible=layerVisibility.roads;
-       finished.layers.buildings.visible=layerVisibility.buildings;
-       scene.add(finished.group);
-       updateLayerMetrics();
-     };
-     startOverview().then(()=>{
-       if(mode!=='map'||sequence!==overviewSequence)return;
-       if(!wideMap)resetMap(); // Preserve user pan/zoom during wide atlas acquisition.
-       container.dataset.overviewReady=singleRiverView?'diagnostic':'true';
-       reportStreaming(streamer.snapshot());
-     }).catch(error=>{
-       if(mode!=='map'||sequence!==overviewSequence||error.name==='AbortError')return;
-       console.error('Unable to load complete overview:',error);
-       status.classList.add('failed');
-       status.textContent='全域の読み込みに失敗しました: '+error.message;
-     });
-   }else{
-     container.dataset.overviewReady='false';
-     followCamera(0,true);
-     streamer.update(playerState.x,playerState.z);
-   }
-   reportStreaming(streamer.snapshot());
+   modeButton.innerHTML=icon(next==='walk'?'map':'close');
+   modeButton.setAttribute('aria-label',next==='walk'?'全体マップを開く':'全体マップを閉じる');
+   modeButton.setAttribute('aria-expanded',String(next==='map'));
+   hint.textContent='';
+   map2d?.setOpen(next==='map');
+   container.dataset.overviewReady=next==='map'?'true':'false';
+   sound.se('map');
+   if(next==='walk'){followCamera(0,true);streamer.update(playerState.x,playerState.z);}
  }
- document.querySelector('#reset').onclick=async()=>{
-   if(mode==='map'){resetMap();return;}
-   try{
-     // Start tile may have been GPU-unloaded after a long walk south.
-     // Rehydrate collision + terrain BEFORE teleporting back to spawn.
-     await streamer.ensure('north');
-     resetWalk();
-   }catch(e){
-     console.error('Unable to reload starting tile:',e);
-     status.classList.add('failed');status.textContent='開始地点の読込に失敗: '+e.message;
-   }
- };
+ const characterButton=document.querySelector('#characters');characterButton.hidden=!playerSprite;
+ for(const [id,label] of [['cat','猫（L）'],['rabbit','うさぎ（R）']]){const b=iconButton(id,label,'character-'+id);b.onclick=()=>switchCharacter(id);characterButton.append(b);}
+ function characterState(){for(const b of characterButton.children)b.setAttribute('aria-pressed',String(b.id==='character-'+playerSprite?.snapshot().character));}
+ function switchCharacter(id){if(mode!=='walk'||warpController?.busy||notebook.opened||npc?.talking)return;const c=id?playerSprite?.selectCharacter(id):playerSprite?.switchCharacter();if(c){characterState();avatarPosition();}}
+ characterState();
+ warpController=createWarpController({
+  allowed:id=>mode==='map'&&canWarp(warpRegistry,map2d.store,id),
+  load:async id=>{const l=warpRegistry.get(id).landing;await Promise.all(requiredLandingTiles(manifest,l.position[0],l.position[2]).map(id=>streamer.ensure(id)));},
+  validate:id=>validateLanding(world,warpRegistry.get(id).landing),
+  capture:()=>({player:{...playerState},yaw:cameraYaw,pitch:cameraPitch,distance:cameraDistance,camera:camera.position.clone(),rotation:camera.quaternion.clone(),target:controls.target.clone()}),
+  commit:result=>{playerState={...playerState,x:result.x,y:result.y,z:result.z,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};cameraYaw=result.yaw;playerSprite?.reset();footCache=null;avatarPosition();changeModeAfterWarp();followCamera(0,true);landmarkFX.arrive([result.x,result.y+world.baseElevation,result.z]);updateHud();},
+  restore:s=>{playerState=s.player;cameraYaw=s.yaw;cameraPitch=s.pitch;cameraDistance=s.distance;camera.position.copy(s.camera);camera.quaternion.copy(s.rotation);controls.target.copy(s.target);avatarPosition();updateHud();},
+  transition:async signal=>{container.classList.add('warp-transition');if(!matchMedia('(prefers-reduced-motion: reduce)').matches)await new Promise(resolve=>setTimeout(resolve,140));if(signal.aborted)throw Error('cancelled');},
+  onBusy:value=>{gameInput.reset();accumulator=0;map2d?.setBusy(value);for(const b of characterButton.children)b.disabled=value;if(!value){const arriving=container.classList.contains('warp-transition')&&mode==='walk';container.classList.remove('warp-transition');if(arriving){container.classList.add('warp-arrival');setTimeout(()=>container.classList.remove('warp-arrival'),150);}}}
+ });
+ function changeModeAfterWarp(){mode='walk';document.querySelector('#app').dataset.mode=mode;modeButton.innerHTML=icon('map');modeButton.setAttribute('aria-label','全体マップを開く');modeButton.setAttribute('aria-expanded','false');container.dataset.overviewReady='false';map2d?.setOpen(false);gameInput.reset();}
  modeButton.onclick=()=>changeMode(mode==='walk'?'map':'walk');
- for(const name of ['roads','buildings'])document.querySelector('#'+name).onclick=()=>{
-   layerVisibility[name]=!layerVisibility[name];
-   for(const v of visuals.values())v.layers[name].visible=layerVisibility[name];
-   if(wideLayer&&name in wideLayer.layers)wideLayer.layers[name].visible=layerVisibility[name];
-   const button=document.querySelector('#'+name);
-   button.classList.toggle('selected',layerVisibility[name]);button.setAttribute('aria-pressed',String(layerVisibility[name]));
- };
  const resize=()=>{
    const w=container.clientWidth,h=container.clientHeight;
    camera.aspect=w/Math.max(h,1);camera.updateProjectionMatrix();renderer.setSize(w,h,false);
-   if(mode==='map')resetMap();
+   
  };
  const observer=new ResizeObserver(resize);observer.observe(container);resize();
  const frustum=new THREE.Frustum(),projectionView=new THREE.Matrix4();
@@ -528,48 +609,50 @@ async function init(north,manifest){
  resetWalk();changeMode('walk');
  if(new URLSearchParams(location.search).has('test')){
    window.__michiDebug={
+     npcTargets:()=>npc?.targets()||[],
+    npcSnapshot:()=>npc?.snapshot()||[],
      ensureTile:id=>streamer.ensure(id),
      teleport:(x,z,yaw=Math.PI)=>{
        if(collisionReason(world,x,z))return false;
+       playerSprite?.reset();
        playerState={...playerState,x,z,y:terrainHeight(world,x,z),facing:yaw,collision:null,collided:false};
        cameraYaw=yaw;avatarPosition();followCamera(0,true);updateHud();streamer.update(x,z);return true;
      },
      state:()=>({...playerState,tiles:streamer.snapshot()}),
+     avatar:()=>playerSprite?.snapshot()||{kind:'model'},
+     biomes:()=>biomeDebug?{totals:biomeDebug.data.totals,candidates:biomeDebug.data.candidates.length,seams:biomeDebug.data.seams.length}:null,
+     setMarkerTheme:value=>poiMarkers?.setTheme(value),
+     poi:()=>({total:poiRegistry?.points.length||0,visible:poiMarkers?.snapshot()||[]}),
      renderStats:()=>({
        ...geometryStats(visuals.values()),
        pixelRatio:renderer.getPixelRatio(),
        memory:{...renderer.info.memory},
-       render:{...renderer.info.render},
+       geometryBytes:(()=>{const buffers=new Set();scene.traverse(o=>{if(o.geometry){for(const a of Object.values(o.geometry.attributes))buffers.add(a.array.buffer);if(o.geometry.index)buffers.add(o.geometry.index.array.buffer);}if(o.instanceColor)buffers.add(o.instanceColor.array.buffer);if(o.instanceMatrix)buffers.add(o.instanceMatrix.array.buffer);});return [...buffers].reduce((n,b)=>n+b.byteLength,0);})(),
+       heapBytes:performance.memory?.usedJSHeapSize??null,
+       markers:poiMarkers?.snapshot().length||0,
+       render:mode==='map'?{calls:0,triangles:0,points:0,lines:0}:{...renderer.info.render},
        frameP95Ms:Number(container.dataset.frameP95Ms||0),
        longTaskCount:longTaskState.count,
        visibleTiles:Number(container.dataset.frustumVisibleTiles||0),
        wideOverview:wideLayer?{tiles:wideLayer.loadedTiles,...wideLayer.budget}:null,
-       levels:[...visuals.values()].map(v=>({id:v.entry.id,level:v.level,visible:v.root.visible}))
+       natureInstances:Number(container.dataset.natureInstances||0),
+       wildlifeVisible:wildlife?.visibleCount||0,
+       wildlifeCandidates:wildlife?.candidateCount||0,
+       levels:[...visuals.values()].map(v=>({id:v.entry.id,level:v.level,visible:v.root.visible,buildingGeometry:v.layers.buildings.children.map(m=>m.geometry.uuid)}))
      }),
+     map:()=>map2d?.snapshot(),
+     warp:id=>warpController.warp(id),
+     warpBusy:()=>warpController.busy,
+     camera:()=>({position:camera.position.toArray(),quaternion:camera.quaternion.toArray(),yaw:cameraYaw,pitch:cameraPitch,distance:cameraDistance}),
+     sound:()=>sound.snapshot(),
+     exploration:()=>exploration?.snapshot(),
+     wildlifeSpots:()=>wildlife?.candidatePositions||[],
      worldCollision:(x,z)=>collisionReason(world,x,z),
-     overviewProjection:()=>{
-       const pose=overviewPose(manifest,container.clientWidth/Math.max(1,container.clientHeight),camera.fov);
-       const {bounds}=pose;
-       const corners=[];
-       for(const x of [bounds.minX,bounds.maxX])for(const z of [bounds.minZ,bounds.maxZ]){
-         const projected=new THREE.Vector3(x,world.baseElevation===null?0:5,z).project(camera);
-         corners.push({x,z,ndc:[projected.x,projected.y,projected.z]});
-       }
-       return {mode,ready:container.dataset.overviewReady,extent:pose.dimensions,
-         active:streamer.snapshot().active,corners,fogFar:scene.fog.far};
-     },
-     focusSouthRiver:()=>{
-       if(mode!=='map'||!visuals.has('south'))return false;
-       const x=199,z=390;
-       const y=terrainHeight(world,x,z)+.25;
-       controls.target.set(x,y,z);
-       camera.position.set(x+28,y+54,z+62);
-       controls.update();
-       return true;
-     },
      visualAudit:()=>({
        tiles:[...visuals].map(([id,visual])=>({
          id,
+         waterSource:visual.water?.summary.source||null,
+         waterDepth:visual.water?.group.children.map(m=>({test:m.material.depthTest,write:m.material.depthWrite,order:m.renderOrder}))||[],
          waterAreas:visual.water?.summary.areas||0,
          waterRibbons:visual.water?.summary.ribbons||0,
          waterTriangleCount:visual.water?.summary.triangles||0,
@@ -582,20 +665,17 @@ async function init(north,manifest){
          })||[]
        }))
      }),
-     panOverview:(x,z)=>{
-       if(mode!=='map'||!wideMap)return false;
-       const dx=x-controls.target.x,dz=z-controls.target.z;
-       controls.target.x+=dx;controls.target.z+=dz;
-       camera.position.x+=dx;camera.position.z+=dz;
-       controls.update();return true;
-     },
      tick:()=>streamer.update(playerState.x,playerState.z)
    };
  }
+ const compass=setupCompass(document.querySelector('.compass'));
+ const compassVector=new THREE.Vector3();let compassAngle=0;
  function draw(){
    frame=requestAnimationFrame(draw);
    const rawDt=clock.getDelta(),dt=Math.min(rawDt,.16);
-   if(mode==='walk'){
+   gameInput.pollGamepad(dt,notebook.opened?'menu':mode);
+   document.querySelector('#app').dataset.running=String(gameInput.getIntent().run);
+   if(mode==='walk'&&!warpController?.busy&&!notebook.opened&&!npc?.talking){
      accumulator+=dt;const intent=gameInput.getIntent();let n=0;
      while(accumulator>=fixedStep&&n<10){
        playerState=advancePlayer(playerState,{...intent,yaw:cameraYaw},world,fixedStep);
@@ -605,16 +685,9 @@ async function init(north,manifest){
      hudTime+=dt;if(hudTime>.13){updateHud();hudTime=0;}
    }else{accumulator=0;controls.update();}
    streamTime+=dt;if(streamTime>.2){
-     const target=mode==='walk'?{x:playerState.x,z:playerState.z}:
-       wideMap?{x:controls.target.x,z:controls.target.z}:{x:mapTarget.x,z:mapTarget.z};
-     // Never unload terrain/collision around the stationary player while
-     // the user pans far away on a large overview. Walking can then resume
-     // on the very next frame without terrainHeight() touching an absent tile.
-     const retainIds=mode==='map'&&wideMap
-       ?manifest.tiles.filter(entry=>distanceFromRect(playerState.x,playerState.z,entry,manifest.size)<=PRELOAD_DISTANCE).map(entry=>entry.id)
-       :[];
-     streamer.update(target.x,target.z,{retainIds,retainAll:mode==='map'&&!wideMap&&new URLSearchParams(location.search).get('view')!=='river'});streamTime=0;
+     if(mode==='walk'&&!warpController?.busy)streamer.update(playerState.x,playerState.z);streamTime=0;
    }
+
    qualityTime+=dt;
    if(qualityTime>.28){
      for(const visual of visuals.values())scheduleDetail(visual,detailFor(visual.entry));
@@ -625,12 +698,24 @@ async function init(north,manifest){
    // Frustum visibility must track the camera after every walk or orbit update.
    // LOD geometry rebuilds remain throttled above.
    updateVisibleTiles();
-   renderer.render(scene,camera);
+   playerSprite?.update({state:playerState,camera,walking:mode==='walk'});
+   const direction=camera.getWorldDirection(compassVector);const bearing=unwrapAngle(compassBearing(direction.x,direction.z,compassAngle),compassAngle);compassAngle=bearing;compass.update(bearing);
+   landmarkFX.update(dt);
+   map2d?.update(playerState.x,playerState.z,dt,mode==='walk');
+   sound.update(map2d?.biomeAt(playerState.x,playerState.z)||'urban',dt);
+   npc?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode,occlusion:()=>[...visuals.values()].map(v=>v.root)});
+   exploration?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode,camera,occluders:[...visuals.values()].flatMap(v=>[v.root.children[0],...v.layers.buildings.children])});
+   wildlife?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
+   poiMarkers?.update({camera,mode,focus:playerState,isFound:id=>map2d?.isFound(id),pulse:id=>map2d?.pulse(id),isWarp:id=>canWarp(warpRegistry,map2d?.store||{has:()=>false},id)});
+   if(mode==='walk')renderer.render(scene,camera);
    frameIndex++;
    frameDurations.push(rawDt*1000);
    if(frameDurations.length>90)frameDurations.shift();
    metricTime+=dt;
    if(metricTime>.8){
+     container.dataset.wildlifeVisible=String(wildlife?.visibleCount||0);
+     container.dataset.npcVisible=String(npc?.visibleCount||0);
+     container.dataset.wildlifeCandidates=String(wildlife?.candidateCount||0);
      container.dataset.gpuGeometries=String(renderer.info.memory.geometries);
      container.dataset.gpuTextures=String(renderer.info.memory.textures);
      container.dataset.renderCalls=String(renderer.info.render.calls);
@@ -643,15 +728,20 @@ async function init(north,manifest){
      metricTime=0;
    }
  }
+ try{const response=await fetch(import.meta.env.BASE_URL+'data/warps.json');if(response.ok)warpRegistry=createWarpRegistry(await response.json(),poiRegistry,manifest);}catch(e){console.warn('Warp registry disabled',e);}
+ try{map2d=await createExplorationMap({container,registry:poiRegistry||{points:[]},baseURL:import.meta.env.BASE_URL,warps:warpRegistry,npcGroups,onWarp:async id=>{const result=await warpController.warp(id);if(!result.ok)map2d?.failure();},onDiscover:p=>{const unlocked=canWarp(warpRegistry,map2d?.store||{has:()=>true},p.id);landmarkFX.discover(p,unlocked);sound.se(unlocked?'unlock':'discover');},onSelect:()=>sound.se('confirm')});map2d.update(playerState.x,playerState.z,0);modeButton.disabled=false;}catch(e){modeButton.disabled=true;container.dataset.mapError='true';console.warn(e);}
  container.dataset.appReady='true';
  reportStreaming(streamer.snapshot());
  draw();
  window.addEventListener('pagehide',()=>{
-   cancelAnimationFrame(frame);observer.disconnect();gameInput.destroy();controls.dispose();
-   overviewAbort?.abort();longTaskObserver?.disconnect();
+   cancelAnimationFrame(frame);window.removeEventListener('keydown',onNpcEnter);observer.disconnect();warpController?.cancel();gameInput.destroy();controls.dispose();
+   longTaskObserver?.disconnect();
    wideLayer?.dispose();
+   npc?.dispose();landmarkFX.dispose();map2d?.dispose();sound.dispose();exploration?.dispose();wildlife?.dispose();poiMarkers?.dispose();biomeDebug?.dispose();
    void streamer.dispose();
-   avatar.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
+   natureRenderer.dispose();
+   if(playerSprite)playerSprite.dispose();
+   else avatar.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
    renderer.dispose();
  },{once:true});
 }
@@ -659,17 +749,29 @@ async function init(north,manifest){
 async function main(){
  try{
   const root=import.meta.env.BASE_URL;
-  const [manifestResponse,fieldResponse]=await Promise.all([
+  const [manifestResponse,fieldResponse,siteConfigResponse]=await Promise.all([
     fetch(`${root}data/tiles.json`,{cache:'no-store'}),
-    fetch(`${root}data/field.json`,{cache:'no-store'})
+    fetch(`${root}data/field.json`,{cache:'no-store'}),
+    fetch(`${root}data/site-config.json`,{cache:'no-store'})
   ]);
   if(!manifestResponse.ok)throw Error(`tiles.json がありません (HTTP ${manifestResponse.status})`);
   if(!fieldResponse.ok)throw Error(`デモ地形データがありません (HTTP ${fieldResponse.status})`);
   const [manifest,field]=await Promise.all([manifestResponse.json(),fieldResponse.json()]);
   validateField(field);validateManifest(manifest);
-  await init(field,manifest);
+  const requiredSiteConfig=document.documentElement.hasAttribute('data-site-config-required');
+  const configIsJson=siteConfigResponse.ok && (siteConfigResponse.headers.get('content-type')||'').includes('json');
+  if(configIsJson)applySiteConfig(await siteConfigResponse.json());
+  else if(requiredSiteConfig||(!siteConfigResponse.ok&&siteConfigResponse.status!==404)) {
+    throw Error('site-config.json がありません (HTTP '+siteConfigResponse.status+')');
+  }
+  const [roadSupplement,fixedWaterProfiles]=await Promise.all([loadRoadSupplement(manifest,root,fetch),loadWaterProfiles(manifest,root,fetch)]);
+  const home=manifest.tiles.find(t=>t.id==='north');
+  const surfaceMeshes=createSurfaceMeshLoader(manifest,root,fetch);
+  await init(await surfaceMeshes.attach(applyRoadSupplement(field,home,roadSupplement),home),manifest,roadSupplement,fixedWaterProfiles,surfaceMeshes);
  }catch(e){
-  console.error(e);status.classList.add('failed');status.textContent=`読み込み失敗: ${e.message}`;
+  console.error(e);status.classList.add('failed');status.textContent='読みこめませんでした';document.querySelector('#retry').hidden=false;
  }
 }
 main();
+
+
