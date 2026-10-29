@@ -35,23 +35,24 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
  function canvasTexture(canvas){const t=new THREE.CanvasTexture(canvas);t.colorSpace=THREE.SRGBColorSpace;t.needsUpdate=true;return t;}
  async function textureFor(id){
   const record=await imageStore.get(id).catch(()=>null);
-  if(!record||!validRect(record.rect,record.width,record.height))return {texture:canvasTexture(makeSilhouette(id))};
+  if(!record||!validRect(record.rect,record.width,record.height))return {textures:[canvasTexture(makeSilhouette(id))]};
   let bitmap;try{
    bitmap=await createImageBitmap(record.blob);if(bitmap.width!==record.width||bitmap.height!==record.height)throw Error('size mismatch');
-   const columns=record.columns||1,rows=record.rows||1;
-   const canvas=document.createElement('canvas');canvas.width=Math.ceil(bitmap.width/columns);canvas.height=Math.ceil(bitmap.height/rows);
-   const texture=canvasTexture(canvas);
-   function draw(frame){const col=frame%columns,row=Math.floor(frame/columns),x=Math.round(col*bitmap.width/columns),y=Math.round(row*bitmap.height/rows),w=Math.round((col+1)*bitmap.width/columns)-x,h=Math.round((row+1)*bitmap.height/rows)-y;const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,x,y,w,h,Math.floor((canvas.width-w)/2),canvas.height-h,w,h);texture.needsUpdate=true;}
-   if(columns===1&&rows===1){const r=record.rect;canvas.width=r.width;canvas.height=r.height;canvas.getContext('2d').drawImage(bitmap,r.x,r.y,r.width,r.height,0,0,r.width,r.height);texture.needsUpdate=true;bitmap.close();return {texture};}
-   draw(0);return {texture,bitmap,draw,frames:columns*rows,frame:0,time:0};
-  }catch{bitmap?.close();return {texture:canvasTexture(makeSilhouette(id))};}
+   const columns=record.columns||1,rows=record.rows||1,textures=[];
+   for(let frame=0;frame<columns*rows;frame++){
+    const col=frame%columns,row=Math.floor(frame/columns);
+    const r=columns===1&&rows===1?record.rect:{x:Math.round(col*bitmap.width/columns),y:Math.round(row*bitmap.height/rows),width:Math.round((col+1)*bitmap.width/columns)-Math.round(col*bitmap.width/columns),height:Math.round((row+1)*bitmap.height/rows)-Math.round(row*bitmap.height/rows)};
+    const c=document.createElement('canvas');c.width=r.width;c.height=r.height;c.getContext('2d').drawImage(bitmap,r.x,r.y,r.width,r.height,0,0,r.width,r.height);textures.push(canvasTexture(c));
+   }
+   bitmap.close();return {textures};
+  }catch{bitmap?.close();return {textures:[canvasTexture(makeSilhouette(id))]};}
  }
- function release(id){const v=live.get(id);if(!v)return;live.delete(id);v.cancelled=true;for(const m of v.members){scene.remove(m.sprite);m.sprite.material.map?.dispose();m.animation?.bitmap?.close();m.sprite.material.dispose();}}
- async function mount(g){if(live.has(g.groupId)||closed)return;const v={group:g,members:[],cancelled:false,x:g.spawnAnchor[0],z:g.spawnAnchor[1],target:null,wait:1+Math.random()*3};live.set(g.groupId,v);const token=generation;
-  const sharedSpriteId=g.visualSpriteId||(g.groupId==='twins'?'twins':null);
-  const visualMembers=sharedSpriteId?[{...g.members[0],id:sharedSpriteId,spriteId:sharedSpriteId,offset:[0,0]}]:g.members;v.visualCount=visualMembers.length;
-  for(const m of visualMembers){let y;try{y=ground(g.spawnAnchor[0]+m.offset[0],g.spawnAnchor[1]+m.offset[1]);}catch{release(g.groupId);return;}if(!Number.isFinite(y)){release(g.groupId);return;}
-   const animation=await textureFor(m.spriteId||m.id),tex=animation.texture;if(closed||v.cancelled||token!==generation){tex.dispose();animation.bitmap?.close();return;}const material=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:.05,depthTest:true,depthWrite:true});const sprite=new THREE.Sprite(material);const aspect=tex.image.width/tex.image.height;sprite.scale.set(m.height*scaleFactor*aspect,m.height*scaleFactor,1);sprite.center.set(.5,0);sprite.position.set(g.spawnAnchor[0]+m.offset[0],y,g.spawnAnchor[1]+m.offset[1]);sprite.name='npc-'+m.id;sprite.visible=false;scene.add(sprite);v.members.push({id:m.id,sprite,animation,offset:m.offset,baseHeight:m.height,speed:.65+Math.random()*.12});
+ function release(id){const v=live.get(id);if(!v)return;live.delete(id);v.cancelled=true;for(const m of v.members){scene.remove(m.sprite);m.sprite.material.dispose();}for(const resource of v.resources.values())for(const t of resource.textures)t.dispose();}
+ async function mount(g){if(live.has(g.groupId)||closed)return;const v={group:g,members:[],resources:new Map(),cancelled:false,x:g.spawnAnchor[0],z:g.spawnAnchor[1],target:null,wait:1+Math.random()*3,time:0};live.set(g.groupId,v);const token=generation;
+  const visualMembers=g.members;v.visualCount=visualMembers.length;
+  for(const [index,m] of visualMembers.entries()){let y;try{y=ground(g.spawnAnchor[0]+m.offset[0],g.spawnAnchor[1]+m.offset[1]);}catch{release(g.groupId);return;}if(!Number.isFinite(y)){release(g.groupId);return;}
+   const imageId=m.spriteId||g.visualSpriteId||m.id;let resource=v.resources.get(imageId);if(!resource){resource=await textureFor(imageId);if(closed||v.cancelled||token!==generation){for(const t of resource.textures)t.dispose();return;}v.resources.set(imageId,resource);}
+   const tex=resource.textures[0],material=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:.05,depthTest:true,depthWrite:true});const sprite=new THREE.Sprite(material);const aspect=tex.image.width/tex.image.height;sprite.scale.set(m.height*scaleFactor*aspect,m.height*scaleFactor,1);sprite.center.set(.5,0);sprite.position.set(g.spawnAnchor[0]+m.offset[0],y,g.spawnAnchor[1]+m.offset[1]);sprite.name='npc-'+m.id;sprite.visible=false;scene.add(sprite);const phase=visualMembers.slice(0,index).some(other=>(other.spriteId||g.visualSpriteId||other.id)===imageId)?1:0;v.members.push({id:m.id,sprite,animation:{resource,frame:0,frames:resource.textures.length,phase},offset:m.offset,baseHeight:m.height,speed:.65+Math.random()*.12});
   }
   for(const member of v.members)member.sprite.visible=true;
  }
@@ -84,7 +85,7 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
   for(const [position,x,y,z] of proposed)position.set(x,y,z);
   return travel>0;
  }
- function update({dt,playerX,playerZ,currentMode,occlusion=()=>[]}){px=playerX;pz=playerZ;mode=currentMode;occluders=occlusion;dialogue.observe(groups,px,pz);if(mode!=='walk'&&dialogue.current)stopDialogue();for(const v of live.values()){const moving=mode==='walk'&&move(v,dt);for(const m of v.members){const a=m.animation;if(!a?.draw)continue;a.time=moving?a.time+Math.min(Math.max(dt,0),.1):0;const frame=moving?Math.floor(a.time*6)%a.frames:0;if(frame!==a.frame){a.frame=frame;a.draw(frame);}}}refreshTime+=dt;if(refreshTime<.25)return;refreshTime=0;for(const g of groups){if(groupInRange(g,px,pz,mode))void mount(g);else release(g.groupId);}}
+ function update({dt,playerX,playerZ,currentMode,occlusion=()=>[]}){px=playerX;pz=playerZ;mode=currentMode;occluders=occlusion;dialogue.observe(groups,px,pz);if(mode!=='walk'&&dialogue.current)stopDialogue();for(const v of live.values()){const moving=mode==='walk'&&move(v,dt);v.time=moving?v.time+Math.min(Math.max(dt,0),.1):0;for(const m of v.members){const a=m.animation;if(!a)continue;const frame=moving?(Math.floor(v.time*(a.frames===4?4:6))+a.phase)%a.frames:0;if(frame!==a.frame){a.frame=frame;m.sprite.material.map=a.resource.textures[frame];m.sprite.material.needsUpdate=true;}}}refreshTime+=dt;if(refreshTime<.25)return;refreshTime=0;for(const g of groups){if(groupInRange(g,px,pz,mode))void mount(g);else release(g.groupId);}}
  const ray=new THREE.Raycaster();
  function interactAt(clientX,clientY,rect){if(closed||mode!=='walk'||dialogue.current||!rect||rect.width<=0||rect.height<=0)return false;const nx=(clientX-rect.left)/rect.width*2-1,ny=1-(clientY-rect.top)/rect.height*2;if(Math.abs(nx)>1||Math.abs(ny)>1)return false;camera.updateMatrixWorld();ray.setFromCamera(new THREE.Vector2(nx,ny),camera);ray.far=camera.far;
   const candidates=[];for(const v of live.values()){const g=v.group;if(v.members.length!==v.visualCount)continue;for(const m of v.members){if(Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)>g.interactionRadius)continue;m.sprite.updateWorldMatrix(true,false);const hit=ray.intersectObject(m.sprite)[0];if(hit)candidates.push({g,hit});}}
@@ -109,7 +110,8 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
     const file=zipInput.files?.[0];if(!file)return;
     zipInput.disabled=true;zipStatus.textContent='ZIPの画像を確認しています…';
     try{
-     const records=await prepareNpcZip(file,pack.spriteIds);
+     const mapping=Object.fromEntries(groups.flatMap(g=>g.members.map(m=>[m.id,m.spriteId||g.visualSpriteId||m.id])).filter(([,spriteId])=>pack.spriteIds.includes(spriteId)));
+     const records=await prepareNpcZip(file,pack.spriteIds,globalThis.createImageBitmap,mapping);
      await imageStore.putMany(records);
      await refreshImages();
      zipStatus.textContent=records.length+'枚の画像を登録しました';
