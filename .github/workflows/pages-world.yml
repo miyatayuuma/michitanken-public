@@ -27,6 +27,8 @@ jobs:
           path: dist
   deploy:
     needs: build
+    environment:
+      name: pages-world
     runs-on: ubuntu-latest
     steps:
       - id: deploy
