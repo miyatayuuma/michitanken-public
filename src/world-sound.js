@@ -56,7 +56,7 @@ export function createWorldSound(){
  function se(kind){
   if(closed||!activated||document.hidden||seMuted)return false;
   const entry=config?.se?.[kind],path=typeof entry==='string'?entry:entry?.path;
-  if(typeof path!=='string'||!/^assets\/se\/[A-Za-z0-9_-]+\.(?:ogg|mp3|wav)$/.test(path))return false;
+  if(typeof path!=='string'||!/^assets\/(?:se|michi-se)\/[A-Za-z0-9_-]+\.(?:ogg|mp3|wav)$/.test(path))return false;
   const now=performance.now();
   if(now-(seCooldown.get(kind)??-Infinity)<250)return false;
   const url=globalThis.michiWorldAsset?.(path);
