@@ -6,15 +6,21 @@ try{for(const [name,width,height] of [['desktop',1280,800],['mobile',390,844]]){
 
  // The retired character ZIP picker must not appear; inspect the new lineup.
  await page.locator('#menu-open').click();
- await page.locator('.npc-settings > summary').click();
- assert.equal(await page.locator('.npc-settings input[type=file]').count(),0);
+ assert.equal(await page.locator('.npc-settings').count(),0);
+ assert.equal(await page.locator('.npc-size-setting').count(),0);
+ assert.equal(await page.locator('#notebook-menu input[type=file]').count(),0);
  assert.equal(await page.evaluate(()=>document.querySelector('#world-open')?.parentElement?.id),'notebook-menu');
  assert.equal(await page.locator('body > button').filter({hasText:'ワールド'}).count(),0);
- const slider=page.locator('.npc-size-setting input[type=range]');
- assert.equal(await slider.inputValue(),'120');
- await page.getByRole('button',{name:'キャラサイズ比較を開く'}).click();
+ await page.locator('#npc-compare-open').click();
  await page.locator('.npc-compare-overlay').waitFor();
  assert.ok(await page.locator('.npc-compare-item').count()>=11);
+ const playerCanvas=page.locator('.npc-compare-item').first().locator('canvas');
+ const firstFrame=await playerCanvas.evaluate(canvas=>canvas.toDataURL());
+ await page.waitForTimeout(320);
+ const nextFrame=await playerCanvas.evaluate(canvas=>canvas.toDataURL());
+ assert.notEqual(firstFrame,nextFrame,'player walk frames must animate in comparison');
+ await page.getByRole('button',{name:'一時停止'}).click();
+ assert.equal(await page.getByRole('button',{name:'再生'}).count(),1);
  await page.screenshot({path:path.join(out,name+'-size-comparison.png')});
  await page.getByRole('button',{name:'比較を閉じる'}).click();
  await page.locator('#menu-close').click();
