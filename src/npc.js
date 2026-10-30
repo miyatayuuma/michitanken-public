@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {createDialogueState,groupInRange,validateGroups,validRect} from '../lib/npc.mjs';
 import {createNpcImageStore} from './npc-storage.js';
 import {openNpcSizeComparison} from './npc-size-comparison.js';
+import {splitFurigana} from '../lib/furigana.mjs';
 
 // The host supplies fictional or private group positions; this module never uploads images.
 export function createNpcSystem({scene,container,groups,ground,camera,storage,blocked=()=>true,onMeet=()=>{}}){
@@ -11,7 +12,19 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
  let closeComparison=null;
  const panel=document.createElement('section');panel.className='npc-dialog paper';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','会話');
  const speaker=document.createElement('strong'),line=document.createElement('p'),next=document.createElement('button');next.textContent='つぎへ';panel.append(speaker,line,next);container.append(panel);
- const showLine=()=>{const item=dialogue.current?.lines[dialogue.current.index];if(!item){panel.hidden=true;return;}speaker.textContent=item[0];line.textContent=item[1];next.textContent=dialogue.current.index===dialogue.current.lines.length-1?'おしまい':'つぎへ';panel.hidden=false;};
+ const showLine=()=>{
+  const item=dialogue.current?.lines[dialogue.current.index];if(!item){panel.hidden=true;return;}
+  speaker.textContent=item[0];
+  const nodes=splitFurigana(item[1]).map(piece=>{
+   if(piece.text!==undefined)return document.createTextNode(piece.text);
+   const ruby=document.createElement('ruby'),reading=document.createElement('rt');
+   ruby.append(document.createTextNode(piece.base),reading);
+   reading.textContent=piece.reading;
+   return ruby;
+  });
+  line.replaceChildren(...nodes);
+  next.textContent=dialogue.current.index===dialogue.current.lines.length-1?'おしまい':'つぎへ';panel.hidden=false;
+ };
  const advance=()=>{if(!dialogue.current)return false;dialogue.advance();showLine();return true;};next.onclick=advance;
  const stopDialogue=()=>{dialogue.close();showLine();};
  const makeSilhouette=id=>{const c=document.createElement('canvas');c.width=128;c.height=192;const ctx=c.getContext('2d');ctx.fillStyle='#46534c';if(id==='jiji'){ctx.beginPath();ctx.moveTo(24,85);ctx.lineTo(20,42);ctx.lineTo(47,61);ctx.lineTo(80,61);ctx.lineTo(108,42);ctx.lineTo(104,85);ctx.ellipse(64,93,44,40,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(64,151,35,39,0,0,Math.PI*2);ctx.fill();}else{ctx.beginPath();ctx.arc(64,43,31,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.moveTo(40,70);ctx.lineTo(88,70);ctx.lineTo(108,188);ctx.lineTo(20,188);ctx.closePath();ctx.fill();}return c;};

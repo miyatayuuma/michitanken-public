@@ -10,7 +10,8 @@ const label=document.createElement('label');label.textContent='自分のワー�
 const input=document.createElement('input');input.type='file';input.accept='.zip,application/zip';label.append(input);
 const demo=document.createElement('button');demo.textContent='架空の街で遊ぶ';
 const erase=document.createElement('button');erase.textContent='端末のワールドパックだけ削除';
-const controls=document.createElement('div');controls.append(label,document.createElement('br'),demo,erase);
+const back=document.createElement('button');back.textContent='もどる';back.hidden=true;
+const controls=document.createElement('div');controls.append(label,document.createElement('br'),demo,erase,back);
 box.append(title,status,controls);root.append(box);document.body.append(root);
 // Keep world switching available, but never cover the walking/run controls.
 const button=document.createElement('button');
@@ -23,7 +24,8 @@ button.onclick=()=>{
 document.querySelector('#notebook-menu').insertBefore(button,document.querySelector('#standalone-audio'));
 let current=null,started=false;
 const hide=()=>{root.hidden=true;root.style.display='none';};
-const contentType=name=>name.endsWith('.json')?'application/json':name.endsWith('.png')?'image/png':name.endsWith('.webp')?'image/webp':name.endsWith('.glb')?'model/gltf-binary':name.endsWith('.ogg')?'audio/ogg':name.endsWith('.mp3')?'audio/mpeg':'application/octet-stream';
+back.onclick=hide;
+const contentType=name=>name.endsWith('.json')?'application/json':name.endsWith('.png')?'image/png':name.endsWith('.webp')?'image/webp':name.endsWith('.glb')?'model/gltf-binary':name.endsWith('.ogg')?'audio/ogg':name.endsWith('.mp3')?'audio/mpeg':name.endsWith('.wav')?'audio/wav':'application/octet-stream';
 const originalFetch=globalThis.fetch.bind(globalThis);
 globalThis.fetch=async function(resource,options){
  const request=resource instanceof Request?resource:null;
@@ -40,13 +42,14 @@ globalThis.fetch=async function(resource,options){
 };
 const objectURLs=new Map();
 globalThis.michiWorldActive=()=>!!current;
+globalThis.michiWorldPackId=()=>current?.manifest?.packId||'demo';
 globalThis.michiWorldAsset=path=>{
  if(!current)return null;
  const bytes=current.files.get(path);if(!bytes)return null;
  if(!objectURLs.has(path))objectURLs.set(path,URL.createObjectURL(new Blob([bytes],{type:contentType(path)})));
  return objectURLs.get(path);
 };
-async function start(){hide();if(!started){started=true;await import('./main.js');}}
+async function start(){hide();if(!started){started=true;back.hidden=false;await import('./main.js');}}
 async function load(blob){status.textContent='ZIPを確認しています…';const parsed=await validateWorldPack(blob);return parsed;}
 input.onchange=async()=>{
  const blob=input.files?.[0];if(!blob)return;input.disabled=true;

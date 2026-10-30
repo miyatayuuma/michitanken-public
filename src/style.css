@@ -11,10 +11,17 @@
 
 .compass{border:0;box-shadow:none;background:transparent}.compass>svg{width:100%;height:100%;overflow:visible}.compass .north-needle{transform-origin:32px 32px;transform-box:view-box}#app[data-running=true] .compass{border:0;outline:2px solid var(--action);border-radius:50%}
 .npc-dialog{position:absolute;z-index:24;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(520px,calc(100% - 32px));padding:14px 16px;pointer-events:auto}.npc-dialog p{margin:8px 0;line-height:1.55}.npc-dialog button{display:block;margin-left:auto}
+.npc-dialog ruby{ruby-position:over}.npc-dialog rt{font-size:.57em;color:var(--quiet);font-weight:400}
 
 /* Optional map cheat overlay. */
 #npc-map-cheat{position:absolute;right:20px;top:18px;z-index:3;padding:6px 9px;min-height:38px;min-width:110px;font-size:.72rem;white-space:nowrap;}
 @media(max-width:440px){#npc-map-cheat{top:61px;right:12px;padding:5px 7px;min-height:34px;}}
+
+.map-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.map-actions button{font-size:.8rem;padding:6px 9px;min-height:40px}
+.map-clear-pin{position:absolute;top:61px;left:18px;z-index:3;padding:5px 8px;min-height:36px;font-size:.75rem}
+#destination-hud{position:absolute;z-index:12;top:calc(85px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;white-space:nowrap;padding:5px 10px;font-size:.85rem;pointer-events:none}
+#destination-hud>span:first-child{display:inline-block;font-size:1.5rem;font-weight:800;color:#a33d5b;line-height:1;transform-origin:center}
 
 /* Character inspector: same world-unit scale and one shared foot line. */
 #world-open{display:block;width:100%;margin:10px 0 16px}

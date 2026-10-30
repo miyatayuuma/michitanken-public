@@ -3,8 +3,10 @@ import {createBiomeGate} from '../lib/exploration-map.mjs';
 // World ZIP audio is self-contained. The music files never leave the device.
 export function createWorldSound(){
  const gate=createBiomeGate(),abort=new AbortController(),{signal}=abort;
- let config=null,audio=null,currentPath=null,error=null,activated=false,closed=false,muted=false,muteButton=null,playPending=false,playBlocked=false;
+ let config=null,audio=null,seAudio=null,currentPath=null,error=null,activated=false,closed=false,muted=false,seMuted=false,muteButton=null,seButton=null,credit=null,playPending=false,playBlocked=false;
+ const seCooldown=new Map();
  try{muted=localStorage.getItem('michi-world-bgm-muted')==='1';}catch{}
+ try{seMuted=localStorage.getItem('michi-world-se-muted')==='1';}catch{}
  const clamp=n=>Number.isFinite(n)?Math.min(1,Math.max(0,n)):0.08;
  function sync(force=false){
   if(closed)return;
@@ -39,19 +41,37 @@ export function createWorldSound(){
    label();
    muteButton.onclick=()=>{muted=!muted;try{localStorage.setItem('michi-world-bgm-muted',muted?'1':'0');}catch{}label();sync(true);};
    slot.append(muteButton);
-   const credit=document.createElement('small');credit.textContent=' 音楽：甘茶の音楽工房';
+   seButton=document.createElement('button');seButton.type='button';seButton.className='paper';
+   const labelSE=()=>{seButton.textContent=seMuted?'効果音：オフ':'効果音：オン';};
+   labelSE();seButton.onclick=()=>{seMuted=!seMuted;try{localStorage.setItem('michi-world-se-muted',seMuted?'1':'0');}catch{}labelSE();if(seMuted)seAudio?.pause();};
+   slot.append(seButton);
+   credit=document.createElement('small');credit.textContent=' 音楽：甘茶の音楽工房';
    slot.append(credit);
   }
   sync();
  })().catch(e=>{error=e.message;});
  document.addEventListener('pointerdown',event=>{if(event.isTrusted)activate();},{capture:true,signal});
  document.addEventListener('keydown',event=>{if(event.isTrusted)activate();},{capture:true,signal});
- document.addEventListener('visibilitychange',sync,{signal});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)seAudio?.pause();sync();},{signal});
+ function se(kind){
+  if(closed||!activated||document.hidden||seMuted)return false;
+  const entry=config?.se?.[kind],path=typeof entry==='string'?entry:entry?.path;
+  if(typeof path!=='string'||!/^assets\/se\/[A-Za-z0-9_-]+\.(?:ogg|mp3|wav)$/.test(path))return false;
+  const now=performance.now();
+  if(now-(seCooldown.get(kind)??-Infinity)<250)return false;
+  const url=globalThis.michiWorldAsset?.(path);
+  if(!url){error='ワールドZIP内に効果音がありません: '+path;return false;}
+  seCooldown.set(kind,now);
+  if(seAudio){seAudio.pause();seAudio.removeAttribute('src');seAudio.load();}
+  seAudio=new Audio(url);seAudio.preload='none';seAudio.volume=clamp(typeof entry==='object'?entry.gain:0.22);
+  void seAudio.play().catch(()=>{});
+  return true;
+ }
  return {
   activate,
   update(biome,dt){gate.update(biome,dt);sync();},
-  se(){return false;},
-  snapshot:()=>({configured:!!config,activated,biome:gate.current,currentId:currentPath,volume:audio?.volume??0,paused:audio?.paused??true,error}),
-  dispose(){closed=true;abort.abort();audio?.pause();audio?.removeAttribute('src');audio?.load();muteButton?.parentElement?.replaceChildren();}
+  se,
+  snapshot:()=>({configured:!!config,activated,biome:gate.current,currentId:currentPath,volume:audio?.volume??0,paused:audio?.paused??true,seConfigured:Object.keys(config?.se||{}).length,seMuted,error}),
+  dispose(){closed=true;abort.abort();audio?.pause();audio?.removeAttribute('src');audio?.load();seAudio?.pause();seAudio?.removeAttribute('src');muteButton?.remove();seButton?.remove();credit?.remove();}
  };
 }
