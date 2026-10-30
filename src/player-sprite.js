@@ -55,7 +55,10 @@ export function createSpriteAvatar(config,texture){
   // Read-only sprite slices for a device-local, same-scale character lineup.
   previews:()=>(config.characters?.length?config.characters:[{id:'player',animations:config.animations}]).map(entry=>{
    const frame=config.frames[entry.animations.idle[0]];
-   return {id:entry.id,source:texture.image,rect:frame.rect,pivot:frame.pivot,pixelsPerUnit:config.pixelsPerUnit};
+   const walkFrames=(entry.animations.walk?.length?entry.animations.walk:entry.animations.idle)
+    .map(index=>({rect:config.frames[index].rect,pivot:config.frames[index].pivot}));
+   return {id:entry.id,source:texture.image,rect:frame.rect,pivot:frame.pivot,
+    walkFrames,pixelsPerUnit:config.pixelsPerUnit};
   }),
   snapshot:()=>({...current,character,pixelsPerUnit:config.pixelsPerUnit,depthTest:material.depthTest,
    depthWrite:material.depthWrite,position:group.position.toArray(),yaw:plane.rotation.y}),

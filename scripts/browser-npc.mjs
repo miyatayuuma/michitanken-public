@@ -6,17 +6,39 @@ try{for(const [name,width,height] of [['desktop',1280,800],['mobile',390,844]]){
 
  // The retired character ZIP picker must not appear; inspect the new lineup.
  await page.locator('#menu-open').click();
- await page.locator('.npc-settings > summary').click();
- assert.equal(await page.locator('.npc-settings input[type=file]').count(),0);
+ assert.equal(await page.locator('.npc-settings').count(),0);
+ assert.equal(await page.locator('.npc-size-setting').count(),0);
+ assert.equal(await page.locator('#notebook-menu input[type=file]').count(),0);
  assert.equal(await page.evaluate(()=>document.querySelector('#world-open')?.parentElement?.id),'notebook-menu');
  assert.equal(await page.locator('body > button').filter({hasText:'ワールド'}).count(),0);
- const slider=page.locator('.npc-size-setting input[type=range]');
- assert.equal(await slider.inputValue(),'120');
- await page.getByRole('button',{name:'キャラサイズ比較を開く'}).click();
+ await page.locator('#npc-compare-open').click();
  await page.locator('.npc-compare-overlay').waitFor();
- assert.ok(await page.locator('.npc-compare-item').count()>=11);
+ assert.ok(await page.locator('.npc-compare-item').count()>=3);
+ await page.getByRole('button',{name:'一時停止'}).click();
+ assert.equal(await page.getByRole('button',{name:'再生'}).count(),1);
  await page.screenshot({path:path.join(out,name+'-size-comparison.png')});
  await page.getByRole('button',{name:'比較を閉じる'}).click();
  await page.locator('#menu-close').click();
+ // Procedural two-color sheet verifies frame advancement independently of demo art.
+ const animated=await page.evaluate(async()=>{
+  const {openNpcSizeComparison}=await import('/src/npc-size-comparison.js');
+  const sheet=document.createElement('canvas');sheet.width=2;sheet.height=1;
+  const ctx=sheet.getContext('2d');ctx.fillStyle='#f00';ctx.fillRect(0,0,1,1);
+  ctx.fillStyle='#00f';ctx.fillRect(1,0,1,1);
+  const preview={id:'synthetic',source:sheet,rect:[0,0,1,1],pivot:[0,1],pixelsPerUnit:1,
+   walkFrames:[{rect:[0,0,1,1],pivot:[0,1]},{rect:[1,0,1,1],pivot:[0,1]}]};
+  const dismiss=openNpcSizeComparison({container:document.querySelector('#scene'),groups:[],
+   playerPreviews:()=>[preview],readNpcImage:async()=>null});
+  const canvas=document.querySelector('.npc-compare-stage canvas'),first=canvas.toDataURL();
+  let changed=false;
+  for(let i=0;i<30&&!changed;i++){
+   await new Promise(resolve=>setTimeout(resolve,100));
+   changed=canvas.toDataURL()!==first;
+  }
+  const diagnostic={changed,hidden:document.hidden,frames:preview.walkFrames.length};
+  dismiss();return diagnostic;
+ });
+ assert.ok(animated.changed,'walk preview must advance frames: '+JSON.stringify(animated));
+
  const result=await page.evaluate(async()=>{const THREE=await import('/node_modules/three/build/three.module.js'),{createNpcSystem}=await import('/src/npc.js'),{KIKI_JIJI_DIALOGUES}=await import('/lib/npc.mjs');const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(50,1,.1,100);camera.position.set(0,2,8);camera.lookAt(0,1,0);camera.updateProjectionMatrix();camera.updateMatrixWorld();const holder=document.createElement('div');holder.style.cssText='position:fixed;left:0;top:0;width:400px;height:400px;z-index:50';document.body.append(holder);const group={groupId:'test-'+Math.random(),spawnAnchor:[0,0],interactionRadius:5,displayRadius:30,movementMode:'fixed',members:[{id:'kiki',offset:[-1,0],height:1.6},{id:'jiji',offset:[1,0],height:.7}],dialogues:KIKI_JIJI_DIALOGUES};const npc=createNpcSystem({scene,container:holder,groups:[group],ground:()=>0,camera});npc.update({dt:.3,playerX:0,playerZ:1,currentMode:'walk'});for(let i=0;i<100&&npc.visibleCount!==2;i++)await new Promise(r=>setTimeout(r,20));if(npc.visibleCount!==2)throw Error('group did not load');const hit=(id)=>{const sprite=scene.getObjectByName('npc-'+id),p=sprite.position.clone();p.y+=sprite.scale.y/2;p.project(camera);return npc.interactAt((p.x+1)*200,(1-p.y)*200,holder.getBoundingClientRect());};if(!hit('kiki'))throw Error('kiki hit failed');const first=holder.querySelector('.npc-dialog strong').textContent;while(npc.talking)npc.advance();if(!hit('jiji'))throw Error('jiji hit failed');const again=holder.querySelector('.npc-dialog strong').textContent;npc.close();npc.update({dt:.3,playerX:100,playerZ:100,currentMode:'walk'});const count=npc.visibleCount;npc.dispose();holder.remove();return {first,again,count};});assert.deepEqual(result,{first:'キキ',again:'キキ',count:0});assert.deepEqual(errors,[]);await context.close();console.log(name,'game, menu, size comparison PASS');}}
 finally{await browser.close();await server.close();}

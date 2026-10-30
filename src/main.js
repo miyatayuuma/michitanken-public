@@ -185,6 +185,9 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  const wideMap=false;
  const wideLayer=null;
  let map2d=null,warpRegistry=null,warpController=null;
+ const destinationHud=document.createElement('div');destinationHud.id='destination-hud';destinationHud.className='paper';destinationHud.hidden=true;
+ const destinationArrow=document.createElement('span');destinationArrow.textContent='↑';destinationArrow.setAttribute('aria-hidden','true');
+ const destinationLabel=document.createElement('span');destinationHud.append(destinationArrow,destinationLabel);container.append(destinationHud);
  const landmarkFX=createLandmarkFX(scene,north.terrain.min);
  const sound=createMichiSound();
  let elapsed=0,streamer=null,playerState=null,mode='walk';
@@ -578,7 +581,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  function switchCharacter(id){if(mode!=='walk'||warpController?.busy||notebook.opened||npc?.talking)return;const c=id?playerSprite?.selectCharacter(id):playerSprite?.switchCharacter();if(c){characterState();avatarPosition();}}
  characterState();
  warpController=createWarpController({
-  allowed:id=>mode==='map'&&canWarp(warpRegistry,map2d.store,id),
+  allowed:id=>mode==='map'&&!!map2d?.canWarp(id),
   load:async id=>{const l=warpRegistry.get(id).landing;await Promise.all(requiredLandingTiles(manifest,l.position[0],l.position[2]).map(id=>streamer.ensure(id)));},
   validate:id=>validateLanding(world,warpRegistry.get(id).landing),
   capture:()=>({player:{...playerState},yaw:cameraYaw,pitch:cameraPitch,distance:cameraDistance,camera:camera.position.clone(),rotation:camera.quaternion.clone(),target:controls.target.clone()}),
@@ -719,12 +722,20 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    playerSprite?.update({state:playerState,camera,walking:mode==='walk'});
    const direction=camera.getWorldDirection(compassVector);const bearing=unwrapAngle(compassBearing(direction.x,direction.z,compassAngle),compassAngle);compassAngle=bearing;compass.update(bearing);
    landmarkFX.update(dt);
-   map2d?.update(playerState.x,playerState.z,dt,mode==='walk');
+   map2d?.update(playerState.x,playerState.z,dt,mode==='walk',bearing);
+   const destination=map2d?.destination();
+   destinationHud.hidden=mode!=='walk'||!destination;
+   if(destination&&!destinationHud.hidden){
+    const dx=destination.x-playerState.x,dz=destination.z-playerState.z,distance=Math.hypot(dx,dz);
+    const relative=compassBearing(dx,dz)-bearing;
+    destinationArrow.style.transform='rotate('+relative+'rad)';
+    destinationLabel.textContent='目的地 '+Math.round(distance)+'m';
+   }
    sound.update(map2d?.biomeAt(playerState.x,playerState.z)||'urban',dt);
    npc?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode,occlusion:()=>[...visuals.values()].map(v=>v.root)});
    exploration?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode,camera,occluders:[...visuals.values()].flatMap(v=>[v.root.children[0],...v.layers.buildings.children])});
    wildlife?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
-   poiMarkers?.update({camera,mode,focus:playerState,isFound:id=>map2d?.isFound(id),pulse:id=>map2d?.pulse(id),isWarp:id=>canWarp(warpRegistry,map2d?.store||{has:()=>false},id)});
+   poiMarkers?.update({camera,mode,focus:playerState,isFound:id=>map2d?.isFound(id),pulse:id=>map2d?.pulse(id),isWarp:id=>map2d?.canWarp(id)});
    if(mode==='walk')renderer.render(scene,camera);
    frameIndex++;
    frameDurations.push(rawDt*1000);
@@ -755,7 +766,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    cancelAnimationFrame(frame);window.removeEventListener('keydown',onNpcEnter);observer.disconnect();warpController?.cancel();gameInput.destroy();controls.dispose();
    longTaskObserver?.disconnect();
    wideLayer?.dispose();
-   npc?.dispose();landmarkFX.dispose();map2d?.dispose();sound.dispose();exploration?.dispose();wildlife?.dispose();poiMarkers?.dispose();biomeDebug?.dispose();
+   npc?.dispose();landmarkFX.dispose();map2d?.dispose();destinationHud.remove();sound.dispose();exploration?.dispose();wildlife?.dispose();poiMarkers?.dispose();biomeDebug?.dispose();
    void streamer.dispose();
    natureRenderer.dispose();
    if(playerSprite)playerSprite.dispose();
