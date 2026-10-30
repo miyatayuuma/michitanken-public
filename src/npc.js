@@ -8,19 +8,6 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
  if(storage===undefined){try{storage=globalThis.localStorage;}catch{storage=null;}}
  validateGroups(groups);
  const imageStore=createNpcImageStore(),dialogue=createDialogueState(storage),live=new Map();let closed=false,mode='walk',px=0,pz=0,occluders=()=>[],refreshTime=0,generation=0;
- // Device-only size preference; preserve authored differences between characters.
- const sizeKey='michitanken.npc.size.v2';
- const scaleClamp=value=>Math.min(1.5,Math.max(.65,Number(value)||1));
- let scaleFactor=1.2;
- try{const saved=storage?.getItem(sizeKey);if(saved!=null)scaleFactor=scaleClamp(saved);}catch{}
- const setScale=value=>{
-  scaleFactor=scaleClamp(value);
-  for(const v of live.values())for(const m of v.members){
-   const height=m.baseHeight*scaleFactor,aspect=m.sprite.material.map.image.width/m.sprite.material.map.image.height;
-   m.sprite.scale.set(height*aspect,height,1);
-  }
-  try{storage?.setItem(sizeKey,String(scaleFactor));}catch{}
- };
  let closeComparison=null;
  const panel=document.createElement('section');panel.className='npc-dialog paper';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','会話');
  const speaker=document.createElement('strong'),line=document.createElement('p'),next=document.createElement('button');next.textContent='つぎへ';panel.append(speaker,line,next);container.append(panel);
@@ -50,7 +37,7 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
   const visualMembers=g.members;v.visualCount=visualMembers.length;
   for(const [index,m] of visualMembers.entries()){let y;try{y=ground(g.spawnAnchor[0]+m.offset[0],g.spawnAnchor[1]+m.offset[1]);}catch{release(g.groupId);return;}if(!Number.isFinite(y)){release(g.groupId);return;}
    const imageId=m.spriteId||g.visualSpriteId||m.id;let resource=v.resources.get(imageId);if(!resource){resource=await textureFor(imageId);if(closed||v.cancelled||token!==generation){for(const t of resource.textures)t.dispose();return;}v.resources.set(imageId,resource);}
-   const tex=resource.textures[0],material=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:.05,depthTest:true,depthWrite:true});const sprite=new THREE.Sprite(material);const aspect=tex.image.width/tex.image.height;sprite.scale.set(m.height*scaleFactor*aspect,m.height*scaleFactor,1);sprite.center.set(.5,resource.textures.length===4?.1:0);sprite.position.set(g.spawnAnchor[0]+m.offset[0],y,g.spawnAnchor[1]+m.offset[1]);sprite.name='npc-'+m.id;sprite.visible=false;scene.add(sprite);const phase=visualMembers.slice(0,index).some(other=>(other.spriteId||g.visualSpriteId||other.id)===imageId)?1:0;v.members.push({id:m.id,sprite,animation:{resource,frame:0,frames:resource.textures.length,phase},offset:m.offset,baseHeight:m.height,speed:.65+Math.random()*.12});
+   const tex=resource.textures[0],material=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:.05,depthTest:true,depthWrite:true});const sprite=new THREE.Sprite(material);const aspect=tex.image.width/tex.image.height;sprite.scale.set(m.height*aspect,m.height,1);const footRatios=Array.isArray(m.footRatios)?m.footRatios:[0];sprite.center.set(.5,footRatios[0]??0);sprite.position.set(g.spawnAnchor[0]+m.offset[0],y,g.spawnAnchor[1]+m.offset[1]);sprite.name='npc-'+m.id;sprite.visible=false;scene.add(sprite);const phase=visualMembers.slice(0,index).some(other=>(other.spriteId||g.visualSpriteId||other.id)===imageId)?1:0;v.members.push({id:m.id,sprite,animation:{resource,frame:0,frames:resource.textures.length,phase},offset:m.offset,footRatios,speed:.65+Math.random()*.12});
   }
   for(const member of v.members)member.sprite.visible=true;
  }
@@ -83,7 +70,7 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
   for(const [position,x,y,z] of proposed)position.set(x,y,z);
   return travel>0;
  }
- function update({dt,playerX,playerZ,currentMode,occlusion=()=>[]}){px=playerX;pz=playerZ;mode=currentMode;occluders=occlusion;dialogue.observe(groups,px,pz);if(mode!=='walk'&&dialogue.current)stopDialogue();for(const v of live.values()){const moving=mode==='walk'&&move(v,dt);v.time=moving?v.time+Math.min(Math.max(dt,0),.1):0;for(const m of v.members){const a=m.animation;if(!a)continue;const frame=moving?(Math.floor(v.time*(a.frames===4?4:6))+a.phase)%a.frames:0;if(frame!==a.frame){a.frame=frame;m.sprite.material.map=a.resource.textures[frame];m.sprite.material.needsUpdate=true;}}}refreshTime+=dt;if(refreshTime<.25)return;refreshTime=0;for(const g of groups){if(groupInRange(g,px,pz,mode))void mount(g);else release(g.groupId);}}
+ function update({dt,playerX,playerZ,currentMode,occlusion=()=>[]}){px=playerX;pz=playerZ;mode=currentMode;occluders=occlusion;dialogue.observe(groups,px,pz);if(mode!=='walk'&&dialogue.current)stopDialogue();for(const v of live.values()){const moving=mode==='walk'&&move(v,dt);v.time=moving?v.time+Math.min(Math.max(dt,0),.1):0;for(const m of v.members){const a=m.animation;if(!a)continue;const frame=moving?(Math.floor(v.time*(a.frames===4?4:6))+a.phase)%a.frames:0;if(frame!==a.frame){a.frame=frame;m.sprite.center.set(.5,m.footRatios[frame]??m.footRatios[0]??0);m.sprite.material.map=a.resource.textures[frame];m.sprite.material.needsUpdate=true;}}}refreshTime+=dt;if(refreshTime<.25)return;refreshTime=0;for(const g of groups){if(groupInRange(g,px,pz,mode))void mount(g);else release(g.groupId);}}
  const ray=new THREE.Raycaster();
  function interactAt(clientX,clientY,rect){if(closed||mode!=='walk'||dialogue.current||!rect||rect.width<=0||rect.height<=0)return false;const nx=(clientX-rect.left)/rect.width*2-1,ny=1-(clientY-rect.top)/rect.height*2;if(Math.abs(nx)>1||Math.abs(ny)>1)return false;camera.updateMatrixWorld();ray.setFromCamera(new THREE.Vector2(nx,ny),camera);ray.far=camera.far;
   const candidates=[];for(const v of live.values()){const g=v.group;if(v.members.length!==v.visualCount)continue;for(const m of v.members){if(Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)>g.interactionRadius)continue;m.sprite.updateWorldMatrix(true,false);const hit=ray.intersectObject(m.sprite)[0];if(hit)candidates.push({g,hit});}}
@@ -93,33 +80,17 @@ export function createNpcSystem({scene,container,groups,ground,camera,storage,bl
  function interactNearest(){if(dialogue.current)return advance();const choices=[...live.values()].filter(v=>v.members.length===v.visualCount&&v.members.some(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)<=v.group.interactionRadius)).sort((a,b)=>Math.min(...a.members.map(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz)))-Math.min(...b.members.map(m=>Math.hypot(m.sprite.position.x-px,m.sprite.position.z-pz))));if(!choices.length)return false;const m=choices[0].members.slice().sort((a,b)=>Math.hypot(a.sprite.position.x-px,a.sprite.position.z-pz)-Math.hypot(b.sprite.position.x-px,b.sprite.position.z-pz))[0].sprite,p=m.position.clone();p.y+=m.scale.y*.5;p.project(camera);const rect=container.getBoundingClientRect();return interactAt(rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2,rect);}
  async function refreshImages(){generation++;for(const id of [...live.keys()])release(id);refreshTime=.25;}
  function installSettings(menu,{playerPreviews=()=>[]}={}){
-  const section=document.createElement('details');section.className='npc-settings';
-  const summary=document.createElement('summary');summary.textContent='登場人物の大きさ';
-  section.append(summary);
-  const sizeLabel=document.createElement('label');sizeLabel.className='npc-size-setting';
-  sizeLabel.textContent='登場人物の大きさ ';
-  const sizeOutput=document.createElement('output');sizeOutput.textContent=Math.round(scaleFactor*100)+'%';
-  const sizeInput=document.createElement('input');sizeInput.type='range';
-  sizeInput.min='65';sizeInput.max='150';sizeInput.step='5';
-  sizeInput.value=String(Math.round(scaleFactor*100));
-  sizeInput.setAttribute('aria-label','登場人物の大きさ');
-  sizeInput.oninput=()=>{
-   setScale(Number(sizeInput.value)/100);
-   sizeOutput.textContent=Math.round(scaleFactor*100)+'%';
-  };
-  sizeLabel.append(sizeInput,sizeOutput);section.append(sizeLabel);
-  const compareButton=document.createElement('button');compareButton.type='button';
+  const compareButton=document.createElement('button');compareButton.type='button';compareButton.id='npc-compare-open';
   compareButton.textContent='キャラサイズ比較を開く';
   compareButton.onclick=()=>{
    closeComparison?.();
    closeComparison=openNpcSizeComparison({
-    container,groups,scaleFactor,playerPreviews,
+    container,groups,playerPreviews,
     readNpcImage:id=>imageStore.get(id),
     onClose:()=>{closeComparison=null;compareButton.focus();}
    });
   };
-  section.append(compareButton);
-  menu.append(section);
+  menu.append(compareButton);
  }
  function dispose(){closeComparison?.();closed=true;generation++;stopDialogue();for(const id of [...live.keys()])release(id);panel.remove();void imageStore.close().catch(()=>{});}
  return {update,interactAt,interactNearest,advance,close:stopDialogue,installSettings,dispose,targets(){const rect=container.getBoundingClientRect();return [...live.values()].flatMap(v=>v.members.map(m=>{const p=m.sprite.position.clone();p.y+=m.sprite.scale.y/2;p.project(camera);return {id:m.id,x:rect.left+(p.x+1)*rect.width/2,y:rect.top+(1-p.y)*rect.height/2};}));},get talking(){return !!dialogue.current;},snapshot(){return [...live.values()].map(v=>({groupId:v.group.groupId,
