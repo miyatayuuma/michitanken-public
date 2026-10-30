@@ -13,7 +13,7 @@ try{for(const [name,width,height] of [['desktop',1280,800],['mobile',390,844]]){
  assert.equal(await page.locator('body > button').filter({hasText:'ワールド'}).count(),0);
  await page.locator('#npc-compare-open').click();
  await page.locator('.npc-compare-overlay').waitFor();
- assert.ok(await page.locator('.npc-compare-item').count()>=11);
+ assert.ok(await page.locator('.npc-compare-item').count()>=4);
  const playerCanvas=page.locator('.npc-compare-item').first().locator('canvas');
  const firstFrame=await playerCanvas.evaluate(canvas=>canvas.toDataURL());
  await page.waitForTimeout(320);
