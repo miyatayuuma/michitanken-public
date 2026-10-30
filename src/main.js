@@ -32,7 +32,10 @@ import {KIKI_JIJI_DIALOGUES} from '../lib/npc.mjs';
 import {BOOK_GROUP_BY_ID} from '../lib/book-characters.mjs';
 import {validateNpcCatalog,resolveNpcPlacements} from '../lib/npc-catalog.mjs';
 import {renderedFootHeight} from '../lib/avatar-ground.mjs';
+import {homeStorageKey,nearbyBuildings,validHomeRecord} from '../lib/home.mjs';
+import {buildHomeInterior} from './home-interior.js';
 import './style.css';
+import './home-style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.createElement('aside');
 const notebook=setupNotebook();document.querySelector('#retry').onclick=()=>location.reload();
 let renderer,controls,scene,camera,frame=0;
@@ -394,6 +397,19 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  const playerSprite=await loadPlayerSprite({baseURL:import.meta.env.BASE_URL});
  const avatar=playerSprite?.group||makeAvatar();avatar.traverse(o=>{if(o.isMesh)o.renderOrder=4;});scene.add(avatar);
  container.dataset.avatarKind=playerSprite?'sprite':'model';
+  const homeKey=homeStorageKey(globalThis.michiWorldPackId?.());
+  let homeRecord=null,homeInterior=null,homeBusy=false,homeSelection=0,exteriorCamera=null;
+  try{const saved=JSON.parse(localStorage.getItem(homeKey)||'null');if(validHomeRecord(saved))homeRecord=saved;}catch{}
+  try{const response=await fetch(import.meta.env.BASE_URL+'data/interiors/home.json',{cache:'no-store'});if(response.ok&&response.headers.get('content-type')?.includes('json'))homeInterior=buildHomeInterior(await response.json());}catch(error){console.warn('Optional home interior unavailable:',error);}
+  const homePanel=document.createElement('section');homePanel.id='home-menu';
+  const homeTitle=document.createElement('h2');homeTitle.textContent='おうち';
+  const homeInfo=document.createElement('p');homeInfo.setAttribute('aria-live','polite');
+  const homeChoose=document.createElement('button');homeChoose.textContent='別の建物を選ぶ';
+  const homeRegister=document.createElement('button');homeRegister.textContent='この建物をおうちにする';
+  const homeEnter=document.createElement('button');homeEnter.textContent='おうちに入る';
+  const homeClear=document.createElement('button');homeClear.textContent='おうちの登録を解除';
+  homePanel.append(homeTitle,homeInfo,homeChoose,homeRegister,homeEnter,homeClear);
+  document.querySelector('#notebook-menu').insertBefore(homePanel,document.querySelector('#standalone-audio'));
  // Optional host configuration keeps real-world locations out of PUBLIC source.
  let npcGroups=[];
  try{const response=await fetch(import.meta.env.BASE_URL+'data/npcs.json',{cache:'no-store'});if(response.ok&&response.headers.get('content-type')?.includes('json')){const config=await response.json();if(config.schema===1&&Array.isArray(config.groups))npcGroups=config.groups.map(g=>({...g,dialogues:g.dialogues||BOOK_GROUP_BY_ID[g.dialogueId||g.groupId]?.dialogues||(g.dialogueId==='kiki-jiji'?KIKI_JIJI_DIALOGUES:undefined)}));}}catch(error){console.warn('NPC configuration unavailable',error);}
@@ -495,13 +511,13 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  const gameInput=createGameInput({
    canvas:renderer.domElement,joystick:document.querySelector('#joystick'),
    knob:document.querySelector('#joystick-knob'),runButton:document.querySelector('#run'),
-   isActive:()=>mode==='walk'&&!warpController?.busy&&!notebook.opened&&!npc?.talking,
-   onLook(dx,dy){if(mode!=='walk'||warpController?.busy)return;cameraYaw+=dx;cameraPitch=Math.min(1.1,Math.max(.2,cameraPitch+dy));},
-   onZoom(ratio){if(mode!=='walk'||warpController?.busy)return;cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));},
-   onModeToggle(){npc?.close();if(notebook.opened){notebook.close();return;}changeMode(mode==='walk'?'map':'walk');},
+    isActive:()=>(mode==='walk'||mode==='interior')&&!warpController?.busy&&!homeBusy&&!notebook.opened&&!npc?.talking,
+    onLook(dx,dy){if((mode!=='walk'&&mode!=='interior')||warpController?.busy)return;cameraYaw+=dx;cameraPitch=Math.min(1.1,Math.max(.2,cameraPitch+dy));},
+    onZoom(ratio){if((mode!=='walk'&&mode!=='interior')||warpController?.busy)return;cameraDistance=Math.min(28,Math.max(5,cameraDistance*ratio));},
+    onModeToggle(){npc?.close();if(notebook.opened){notebook.close();return;}if(mode==='interior'){exitHome();return;}changeMode(mode==='walk'?'map':'walk');},
    onTap(x,y,rect){if(mode==='walk'&&!warpController?.busy&&!notebook.opened){if(npc?.interactAt(x,y,rect)){gameInput.reset();return;}exploration?.collectAt(x,y,rect);}},
-   onInteract(){if(npc?.talking){npc.advance();return;}if(notebook.opened){notebook.activate();return;}sound.activate();if(warpController?.busy)return;if(mode==='map')map2d?.select();else if(!npc?.interactNearest())exploration?.collect();else gameInput.reset();},
-   onBack(){if(npc?.talking){npc.close();gameInput.reset();return;}if(notebook.opened){notebook.close();gameInput.reset();return;}if(warpController?.busy){warpController.cancel();return;}if(mode==='map'&&!map2d?.cancel())changeMode('walk');},
+    onInteract(){if(npc?.talking){npc.advance();return;}if(notebook.opened){notebook.activate();return;}sound.activate();if(warpController?.busy||homeBusy)return;if(mode==='map')map2d?.select();else if(mode==='walk'&&!npc?.interactNearest())exploration?.collect();else if(mode==='walk')gameInput.reset();},
+    onBack(){if(npc?.talking){npc.close();gameInput.reset();return;}if(notebook.opened){notebook.close();gameInput.reset();return;}if(warpController?.busy){warpController.cancel();return;}if(mode==='interior'){exitHome();return;}if(mode==='map'&&!map2d?.cancel())changeMode('walk');},
    onCharacter(id){switchCharacter(id);},
    onActivity(kind){sound.activate();if(kind)document.querySelector('#app').dataset.input=kind;},
    onMapControl(input,dt){if(mode==='map')map2d?.move(input,dt);},
@@ -509,7 +525,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    onMenu(){npc?.close();notebook.toggle();gameInput.reset();},onMenuMove:direction=>notebook.move(direction),onMenuAdjust:amount=>notebook.adjust(amount)
 
  });
- notebook.onChange(()=>{if(notebook.opened)npc?.close();gameInput.reset();});
+  notebook.onChange(()=>{if(notebook.opened){npc?.close();updateHomePanel();}gameInput.reset();});
  const onNpcEnter=e=>{if(e.key==='Enter'&&npc?.talking&&!e.repeat&&!e.target?.matches?.('button,input,textarea,select')){e.preventDefault();npc.advance();}};window.addEventListener('keydown',onNpcEnter);
  let footCache=null;
  const avatarPosition=()=>{
@@ -543,6 +559,77 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    camera.position.lerp(desired,factor);
    controls.target.lerp(target,factor);camera.lookAt(controls.target);
  }
+  function indoorCamera(dt=0,snap=false){
+    if(!homeInterior)return;
+    const p=homeInterior.state,target=new THREE.Vector3(p.x,p.y+1.35,p.z);
+    const distance=Math.min(10,cameraDistance),horizontal=distance*Math.cos(cameraPitch);
+    const desired=new THREE.Vector3(p.x+Math.sin(cameraYaw)*horizontal,p.y+1.35+distance*Math.sin(cameraPitch),p.z+Math.cos(cameraYaw)*horizontal);
+    const factor=snap?1:1-Math.exp(-12*dt);
+    camera.position.lerp(desired,factor);controls.target.lerp(target,factor);camera.lookAt(controls.target);
+  }
+  function homeCandidates(){return nearbyBuildings(world,playerState.x,playerState.z,14);}
+  function updateHomePanel(message=''){
+    const inside=mode==='interior',candidates=inside?[]:homeCandidates(),selected=candidates[homeSelection%candidates.length];
+    if(message)homeInfo.textContent=message;
+    else if(inside)homeInfo.textContent='おうちの中にいます';
+    else homeInfo.textContent=(homeRecord?'登録済みのおうちがあります。':'おうちは未登録です。')+(selected?' 近くの建物 '+(homeSelection%candidates.length+1)+' / '+candidates.length:' 近くに建物がありません。');
+    homeChoose.hidden=inside||candidates.length<2;
+    homeRegister.hidden=inside||!selected;
+    homeClear.hidden=inside||!homeRecord;
+    homeEnter.hidden=!inside&&(!homeRecord||!homeInterior||Math.hypot(homeRecord.center[0]-playerState.x,homeRecord.center[1]-playerState.z)>30);
+    homeEnter.textContent=inside?'外へ出る':'おうちに入る';
+  }
+  function homeLanding(){
+    // The front-door warp never uses the building centroid: test actual walkable terrain.
+    const positions=[[playerState.x,playerState.z]];
+    for(const radius of [2,4,6,8,10])for(let i=0;i<16;i++){const angle=i*Math.PI/8;positions.push([playerState.x+radius*Math.cos(angle),playerState.z+radius*Math.sin(angle)]);}
+    for(const [x,z] of positions){
+      const tileEntry=tileAtPosition(manifest,x,z),tile=tileEntry&&world.tileWorlds.get(tileEntry.id);if(!tile)continue;
+      let foot;try{foot=renderedFootHeight(tile.field,x-tileEntry.offset[0],z-tileEntry.offset[1],world.baseElevation,{roadStep:2.4});}catch{continue;}
+      const landing={confirmed:true,gameSafety:'GAME_SAFE_CONFIRMED',clearance:1.5,position:[x,foot+world.baseElevation,z],yaw:playerState.facing};
+      if(validateLanding(world,landing).ok)return landing;
+    }
+    return null;
+  }
+  function enterHome(){
+    if(!homeInterior||!homeRecord||mode!=='walk'||Math.hypot(homeRecord.center[0]-playerState.x,homeRecord.center[1]-playerState.z)>30)return false;
+    exteriorCamera={yaw:cameraYaw,pitch:cameraPitch,distance:cameraDistance};
+    scene.remove(avatar);homeInterior.scene.add(avatar);
+    mode='interior';document.querySelector('#app').dataset.mode=mode;
+    modeButton.innerHTML=icon('close');modeButton.setAttribute('aria-label','おうちの外へ');
+    modeButton.setAttribute('aria-expanded','false');cameraPitch=.45;cameraDistance=8;
+    gameInput.reset();playerSprite?.reset();notebook.close();
+    avatar.position.set(homeInterior.state.x,homeInterior.state.y,homeInterior.state.z);indoorCamera(0,true);return true;
+  }
+  function exitHome(){
+    if(mode!=='interior')return;
+    homeInterior.scene.remove(avatar);scene.add(avatar);
+    cameraYaw=exteriorCamera?.yaw??cameraYaw;cameraPitch=exteriorCamera?.pitch??.52;cameraDistance=exteriorCamera?.distance??14;
+    changeMode('walk');avatarPosition();followCamera(0,true);updateHomePanel();
+  }
+  homeChoose.onclick=()=>{homeSelection++;updateHomePanel();};
+  homeRegister.onclick=()=>{
+    const candidates=homeCandidates(),selected=candidates[homeSelection%candidates.length];if(!selected)return;
+    const landing=homeLanding();if(!landing){updateHomePanel('安全に着地できる地点が見つかりません。建物から少し離れて再登録してください。');return;}
+    const next={schema:1,id:selected.id,center:[...selected.center],landing};
+    try{localStorage.setItem(homeKey,JSON.stringify(next));}catch{updateHomePanel('保存できません。端末の保存設定を確認してください。');return;}
+    homeRecord=next;homeSelection=0;updateHomePanel('おうちを登録しました。地図からワープできます。');
+  };
+  homeClear.onclick=()=>{try{localStorage.removeItem(homeKey);}catch{}homeRecord=null;updateHomePanel('おうちの登録を解除しました。');};
+  homeEnter.onclick=()=>{if(mode==='interior'){notebook.close();exitHome();}else if(!enterHome())updateHomePanel('近くのおうちに移動してから入ってください。');};
+  async function warpHome(){
+    if(mode!=='map'||homeBusy||!homeRecord)return;
+    homeBusy=true;map2d?.setBusy(true);container.classList.add('warp-transition');
+    try{
+      const landing=homeRecord.landing;
+      await Promise.all(requiredLandingTiles(manifest,landing.position[0],landing.position[2]).map(id=>streamer.ensure(id)));
+      const result=validateLanding(world,landing);
+      if(!result.ok)throw Error(result.reason);
+      playerState={...playerState,x:result.x,y:result.y,z:result.z,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};
+      cameraYaw=result.yaw;playerSprite?.reset();footCache=null;avatarPosition();changeModeAfterWarp();followCamera(0,true);updateHud();
+    }catch(error){map2d?.failure();console.warn('Home warp unavailable:',error);}
+    finally{container.classList.remove('warp-transition');homeBusy=false;map2d?.setBusy(false);}
+  }
  container.dataset.overviewReady='false';
  function updateHud(){
    const owner=tileAtPosition(manifest,playerState.x,playerState.z);
@@ -591,7 +678,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
   onBusy:value=>{gameInput.reset();accumulator=0;map2d?.setBusy(value);for(const b of characterButton.children)b.disabled=value;if(!value){const arriving=container.classList.contains('warp-transition')&&mode==='walk';container.classList.remove('warp-transition');if(arriving){container.classList.add('warp-arrival');setTimeout(()=>container.classList.remove('warp-arrival'),150);}}}
  });
  function changeModeAfterWarp(){mode='walk';document.querySelector('#app').dataset.mode=mode;modeButton.innerHTML=icon('map');modeButton.setAttribute('aria-label','全体マップを開く');modeButton.setAttribute('aria-expanded','false');container.dataset.overviewReady='false';map2d?.setOpen(false);gameInput.reset();}
- modeButton.onclick=()=>changeMode(mode==='walk'?'map':'walk');
+  modeButton.onclick=()=>{if(mode==='interior')exitHome();else changeMode(mode==='walk'?'map':'walk');};
  const resize=()=>{
    const w=container.clientWidth,h=container.clientHeight;
    camera.aspect=w/Math.max(h,1);camera.updateProjectionMatrix();renderer.setSize(w,h,false);
@@ -694,7 +781,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  function draw(){
    frame=requestAnimationFrame(draw);
    const rawDt=clock.getDelta(),dt=Math.min(rawDt,.16);
-   gameInput.pollGamepad(dt,notebook.opened?'menu':mode);
+    gameInput.pollGamepad(dt,notebook.opened?'menu':mode==='interior'?'walk':mode);
    document.querySelector('#app').dataset.running=String(gameInput.getIntent().run);
    if(mode==='walk'&&!warpController?.busy&&!notebook.opened&&!npc?.talking){
      accumulator+=dt;const intent=gameInput.getIntent();let n=0;
@@ -704,7 +791,12 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
      }
      avatarPosition();followCamera(dt);
      hudTime+=dt;if(hudTime>.13){updateHud();hudTime=0;}
-   }else{accumulator=0;controls.update();}
+    }else if(mode==='interior'&&!notebook.opened){
+      homeInterior?.step(gameInput.getIntent(),cameraYaw,dt);
+      if(homeInterior)avatar.position.set(homeInterior.state.x,homeInterior.state.y,homeInterior.state.z);
+      indoorCamera(dt);
+      accumulator=0;
+    }else{accumulator=0;controls.update();}
    streamTime+=dt;if(streamTime>.2){
      if(mode==='walk'&&!warpController?.busy)streamer.update(playerState.x,playerState.z);streamTime=0;
    }
@@ -719,7 +811,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    // Frustum visibility must track the camera after every walk or orbit update.
    // LOD geometry rebuilds remain throttled above.
    updateVisibleTiles();
-   playerSprite?.update({state:playerState,camera,walking:mode==='walk'});
+    playerSprite?.update({state:mode==='interior'?homeInterior.state:playerState,camera,walking:mode==='walk'||mode==='interior'});
    const direction=camera.getWorldDirection(compassVector);const bearing=unwrapAngle(compassBearing(direction.x,direction.z,compassAngle),compassAngle);compassAngle=bearing;compass.update(bearing);
    landmarkFX.update(dt);
    map2d?.update(playerState.x,playerState.z,dt,mode==='walk',bearing);
@@ -736,7 +828,8 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    exploration?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode,camera,occluders:[...visuals.values()].flatMap(v=>[v.root.children[0],...v.layers.buildings.children])});
    wildlife?.update({dt,playerX:playerState.x,playerZ:playerState.z,currentMode:mode});
    poiMarkers?.update({camera,mode,focus:playerState,isFound:id=>map2d?.isFound(id),pulse:id=>map2d?.pulse(id),isWarp:id=>map2d?.canWarp(id)});
-   if(mode==='walk')renderer.render(scene,camera);
+    if(mode==='walk')renderer.render(scene,camera);
+    else if(mode==='interior'&&homeInterior)renderer.render(homeInterior.scene,camera);
    frameIndex++;
    frameDurations.push(rawDt*1000);
    if(frameDurations.length>90)frameDurations.shift();
@@ -758,7 +851,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    }
  }
  try{const response=await fetch(import.meta.env.BASE_URL+'data/warps.json');if(response.ok)warpRegistry=createWarpRegistry(await response.json(),poiRegistry,manifest);}catch(e){console.warn('Warp registry disabled',e);}
- try{map2d=await createExplorationMap({container,registry:poiRegistry||{points:[]},baseURL:import.meta.env.BASE_URL,warps:warpRegistry,npcGroups,onWarp:async id=>{const result=await warpController.warp(id);if(!result.ok)map2d?.failure();},onDiscover:p=>{const unlocked=canWarp(warpRegistry,map2d?.store||{has:()=>true},p.id);landmarkFX.discover(p,unlocked);sound.se(unlocked?'unlock':'discover');},onSelect:()=>sound.se('confirm')});map2d.update(playerState.x,playerState.z,0);modeButton.disabled=false;}catch(e){modeButton.disabled=true;container.dataset.mapError='true';console.warn(e);}
+  try{map2d=await createExplorationMap({container,registry:poiRegistry||{points:[]},baseURL:import.meta.env.BASE_URL,warps:warpRegistry,npcGroups,home:()=>homeRecord,onHomeWarp:warpHome,onWarp:async id=>{const result=await warpController.warp(id);if(!result.ok)map2d?.failure();},onDiscover:p=>{const unlocked=canWarp(warpRegistry,map2d?.store||{has:()=>true},p.id);landmarkFX.discover(p,unlocked);sound.se(unlocked?'unlock':'discover');},onSelect:()=>sound.se('confirm')});map2d.update(playerState.x,playerState.z,0);modeButton.disabled=false;}catch(e){modeButton.disabled=true;container.dataset.mapError='true';console.warn(e);}
  container.dataset.appReady='true';
  reportStreaming(streamer.snapshot());
  draw();
@@ -766,7 +859,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    cancelAnimationFrame(frame);window.removeEventListener('keydown',onNpcEnter);observer.disconnect();warpController?.cancel();gameInput.destroy();controls.dispose();
    longTaskObserver?.disconnect();
    wideLayer?.dispose();
-   npc?.dispose();landmarkFX.dispose();map2d?.dispose();destinationHud.remove();sound.dispose();exploration?.dispose();wildlife?.dispose();poiMarkers?.dispose();biomeDebug?.dispose();
+    npc?.dispose();landmarkFX.dispose();map2d?.dispose();destinationHud.remove();sound.dispose();exploration?.dispose();wildlife?.dispose();poiMarkers?.dispose();biomeDebug?.dispose();homeInterior?.dispose();
    void streamer.dispose();
    natureRenderer.dispose();
    if(playerSprite)playerSprite.dispose();

@@ -1,0 +1,7 @@
+#home-menu{border-top:1px solid var(--edge);margin:12px 0;padding-top:12px;display:flex;flex-direction:column;gap:7px}
+#home-menu h2{font-size:1rem;margin:4px 0}
+#home-menu p{font-size:.85rem;margin:0 0 6px;line-height:1.5}
+#home-menu button{text-align:left;min-height:44px;padding:8px 12px}
+#map-home-warp{position:absolute;top:72px;right:16px;z-index:2;background:#276f5a;color:#fff5df;border-color:#276f5a;font-weight:700}
+@media(pointer:coarse){#app[data-mode=interior]:not([data-input=pad]):not([data-input=keyboard]):not([data-input=mouse]) .game-control{display:block}}
+@media(max-width:650px){#map-home-warp{top:70px;right:10px;font-size:.85rem;padding:8px 10px}}
