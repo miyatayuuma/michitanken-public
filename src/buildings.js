@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import {mergeVertices} from 'three/addons/utils/BufferGeometryUtils.js';
-import {gridSample} from '../lib/geo.mjs';
+import {terrainMeshHeight} from '../lib/geo.mjs';
 import {buildingColors} from '../lib/appearance.mjs';
-const localY=(field,x,z)=>gridSample(field.terrain,x,z)-field.terrain.min;
+const localY=(field,x,z)=>terrainMeshHeight(field.terrain,x,z)-field.terrain.min;
 function geometryFromTriangles(triangles,colors){
  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(triangles,3));
  if(colors)g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
@@ -22,8 +22,8 @@ export function addBuildings(field,parent,layerSet,detail='full',entry={offset:[
   roofs.push(...nongrid.getAttribute('position').array);if(nongrid!==roof)nongrid.dispose();roof.dispose();
   const area=p.reduce((sum,a,i)=>{const c=p[(i+1)%p.length];return sum+a[0]*c[1]-c[0]*a[1];},0);
   for(let i=0;i<p.length;i++){const a=area>0?p[(i+1)%p.length]:p[i],c=area>0?p[i]:p[(i+1)%p.length];walls.push(
-   a[0],bottom,a[1],c[0],bottom,c[1],a[0],top,a[1],
-   c[0],bottom,c[1],c[0],top,c[1],a[0],top,a[1]);
+   a[0],localY(field,a[0],a[1])-.1,a[1],c[0],localY(field,c[0],c[1])-.1,c[1],a[0],top,a[1],
+   c[0],localY(field,c[0],c[1])-.1,c[1],c[0],top,c[1],a[0],top,a[1]);
   }
   const xs=p.map(v=>v[0]),zs=p.map(v=>v[1]);
   overviewBounds.push(new THREE.Box3(new THREE.Vector3(Math.min(...xs),bottom,Math.min(...zs)),new THREE.Vector3(Math.max(...xs),top,Math.max(...zs))));
@@ -67,3 +67,4 @@ function accelerateBuildingRaycast(mesh,boxes,ranges,roofOffset){
   }}finally{this.geometry.setDrawRange(range.start,range.count);}
  };
 }
+

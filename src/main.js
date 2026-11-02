@@ -10,7 +10,7 @@ import {createBiomeDebug} from './biome-debug.js';
 import {loadPoiRegistry,createPoiMarkers} from './poi-markers.js';
 import {addBuildings} from './buildings.js';
 import * as THREE from 'three';
-import {gridSample} from '../lib/geo.mjs';
+import {terrainMeshHeight} from '../lib/geo.mjs';
 import {buildRoadRibbon,roadSurfaceOptions} from '../lib/road-surface.mjs';
 import {loadWaterProfiles,profilesForWaterField} from '../lib/water-profile-data.mjs';
 import {createSurfaceMeshLoader} from '../lib/surface-mesh.mjs';
@@ -39,7 +39,7 @@ import './home-style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.createElement('aside');
 const notebook=setupNotebook();document.querySelector('#retry').onclick=()=>location.reload();
 let renderer,controls,scene,camera,frame=0;
-const localY=(field,x,z)=>gridSample(field.terrain,x,z)-field.terrain.min;
+const localY=(field,x,z)=>terrainMeshHeight(field.terrain,x,z)-field.terrain.min;
 function geometryFromTriangles(triangles){
  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(triangles,3));g.computeVertexNormals();return g;
 }
@@ -895,5 +895,6 @@ async function main(){
  }
 }
 main();
+
 
 
