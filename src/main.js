@@ -400,7 +400,18 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
   const worldSuffix=typeof manifest.worldId==='string'&&/^[a-z0-9-]+$/.test(manifest.worldId)?'.'+manifest.worldId:'';
   const homeKey=homeStorageKey((globalThis.michiWorldPackId?.()||'demo')+worldSuffix);
   let homeRecord=null,homeInterior=null,homeBusy=false,homeSelection=0,exteriorCamera=null;
-  try{const saved=JSON.parse(localStorage.getItem(homeKey)||'null');if(validHomeRecord(saved))homeRecord=saved;}catch{}
+  try{
+   const saved=JSON.parse(localStorage.getItem(homeKey)||'null');
+   if(validHomeRecord(saved))homeRecord=saved;
+   else if(worldSuffix&&Array.isArray(manifest.legacyOffset)&&manifest.legacyOffset.length===2){
+    const previous=JSON.parse(localStorage.getItem(homeStorageKey(globalThis.michiWorldPackId?.()))||'null');
+    if(validHomeRecord(previous)){
+     const [dx,dz]=manifest.legacyOffset,[x,z]=previous.center,position=previous.landing.position;
+     const moved={...previous,center:[x+dx,z+dz],landing:{...previous.landing,position:[position[0]+dx,position[1],position[2]+dz]}};
+     if(tileAtPosition(manifest,moved.center[0],moved.center[1])&&tileAtPosition(manifest,moved.landing.position[0],moved.landing.position[2]))homeRecord=moved;
+    }
+   }
+  }catch{}
   try{const response=await fetch(import.meta.env.BASE_URL+'data/interiors/home.json',{cache:'no-store'});if(response.ok&&response.headers.get('content-type')?.includes('json'))homeInterior=buildHomeInterior(await response.json());}catch(error){console.warn('Optional home interior unavailable:',error);}
   const homePanel=document.createElement('section');homePanel.id='home-menu';
   const homeTitle=document.createElement('h2');homeTitle.textContent='おうち';
