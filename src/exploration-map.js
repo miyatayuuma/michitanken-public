@@ -9,7 +9,8 @@ export async function createExplorationMap({container,registry,baseURL,onDiscove
  const response=await fetch(baseURL+'data/exploration-map.json');if(!response.ok)throw Error('Map unavailable');const data=await response.json();
  if(data.schema!==1||!data.bounds||!Array.isArray(data.lines)||!Array.isArray(data.areas))throw Error('Invalid map');
  let storage;try{storage=localStorage;}catch{}
- const store=createExplorationMapStore({bounds:data.bounds,storage,ids:registry.points.map(p=>p.id)}),b=data.bounds;
+ const worldSuffix=typeof data.worldId==='string'&&/^[a-z0-9-]+$/.test(data.worldId)?'.'+data.worldId:'';
+ const store=createExplorationMapStore({bounds:data.bounds,storage,ids:registry.points.map(p=>p.id),key:'michi.explored.v1'+worldSuffix}),b=data.bounds;
  const panel=document.createElement('section');panel.id='exploration-map';panel.hidden=true;panel.setAttribute('aria-label','全体マップ');
  const canvas=document.createElement('canvas');canvas.setAttribute('aria-label','北が上の地図。現在地と発見済みの地点');canvas.tabIndex=0;
  const label=document.createElement('output');label.id='map-selection';label.setAttribute('aria-live','polite');const confirm=document.createElement('button');confirm.id='map-warp';confirm.textContent='ここへいく';confirm.hidden=true;panel.append(canvas,label,confirm);container.append(panel);
@@ -21,7 +22,7 @@ export async function createExplorationMap({container,registry,baseURL,onDiscove
  const zoomBar=document.createElement('div');zoomBar.className='map-zoom';const minus=iconButton('minus','地図を縮小','map-minus'),plus=iconButton('plus','地図を拡大','map-plus'),zoomLabel=document.createElement('output');zoomLabel.setAttribute('aria-label','地図の倍率');zoomBar.append(minus,zoomLabel,plus);panel.append(title,card,zoomBar);const homeWarpButton=document.createElement('button');homeWarpButton.type='button';homeWarpButton.id='map-home-warp';homeWarpButton.textContent='⌂ おうちにワープ';homeWarpButton.hidden=true;homeWarpButton.onclick=()=>{if(!busy&&home())onHomeWarp();};panel.append(homeWarpButton);
  // A meeting is recorded only after the player talks to that group. All
  // coordinates and discovered places are kept on this device, not uploaded.
- const npcKey='michitanken.npc.met.v1';
+ const npcKey='michitanken.npc.met.v1'+worldSuffix;
  const npcLocations=npcGroups.filter(g=>typeof g.groupId==='string'&&Array.isArray(g.spawnAnchor)&&g.spawnAnchor.length===2&&g.spawnAnchor.every(Number.isFinite));
  const npcById=new Map(npcLocations.map(g=>[g.groupId,g]));
  const npcMet=new Map();let npcCheat=new URLSearchParams(location.search).get('npcCheat')==='1';
@@ -42,7 +43,7 @@ export async function createExplorationMap({container,registry,baseURL,onDiscove
  // Cheat mode exposes confirmed warp landings without changing discovery saves.
  const found=id=>npcCheat||store.has(id);
  const warpAvailable=id=>canWarp(warps,{has:found},id);
- const destinationKey='michitanken.destination.v1.'+(globalThis.michiWorldPackId?.()||'demo');
+ const destinationKey='michitanken.destination.v1.'+(globalThis.michiWorldPackId?.()||'demo')+worldSuffix;
  const insideWorld=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.z)&&p.x>=b.minX&&p.x<=b.maxX&&p.z>=b.minZ&&p.z<=b.maxZ;
  let destination=null;
  try{const saved=JSON.parse(storage?.getItem(destinationKey)||'null');if(insideWorld(saved))destination={x:saved.x,z:saved.z};}catch{}
@@ -155,3 +156,4 @@ export async function createExplorationMap({container,registry,baseURL,onDiscove
  biomeAt(x,z){const v=data.biomes,c=Math.floor((x-b.minX)/v.step),r=Math.floor((z-b.minZ)/v.step);return ['urban','grassland','woodland','waterside'][c>=0&&c<v.cols&&r>=0&&r<v.rows?+v.cells[r*v.cols+c]:0];},
  snapshot:()=>({...store.snapshot(),open,selected,selectedNpc,destination:destination&&{...destination},heading,npcMet:[...npcMet.keys()],npcCheat,npcCount:npcLocations.length,cursor:{...cursor},view:view.snapshot(),marker:MAP_MARKER,points:registry.points.filter(p=>found(p.id)).map(p=>({id:p.id,...position(p.position)})),drawMs,drawCount,canvasPixels:canvas.width*canvas.height,basePixels:terrain.pixels,terrainStyle:'A',terrainUpdates:terrain.updates,mapBytes,homeRegistered:!!home(),warpEnabled:!!warps?.enabled,unlocked:registry.points.filter(p=>warpAvailable(p.id)).map(p=>p.id),busy}),dispose(){closed=true;store.flush();cancelAnimationFrame(frame);observer.disconnect();panel.remove();terrain.dispose();}};
 }
+
