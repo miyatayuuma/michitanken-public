@@ -226,13 +226,19 @@ function addLandscapeDetails(group,entry,field,overlay,reserved,benchTemplate=nu
   let count=0,limit=Math.min(5,Math.max(1,Math.floor(size/1200)));
   for(const p of options){
    if(!safe(p.x,p.z,2)||parks.some(q=>Math.hypot(p.x-q.x,p.z-q.z)<13))continue;
-   parks.push({...p,kind:count===1&&size>1800?'play':count>=2&&count%2===0&&size>1800?'garden':'bench',yaw:hash(area.id+':'+count)*Math.PI*2,spacing:5});
+   let kind=count===1&&size>2400?(hash(area.id+':play')<.5?'swing':'slide'):count>=2&&count%2===0&&size>1800?'garden':'bench';
+   // Space for the entire estimated play equipment, not just its centre.
+   if(kind==='swing'||kind==='slide'){
+    const clear=[[-2,-1.7],[-2,1.7],[2,-1.7],[2,1.7]].every(([dx,dz])=>inside(p.x+dx,p.z+dz,ring)&&!(area.holes||[]).some(h=>inside(p.x+dx,p.z+dz,h))&&safe(p.x+dx,p.z+dz,1));
+    if(!clear)kind='bench';
+   }
+   parks.push({...p,kind,yaw:hash(area.id+':'+count)*Math.PI*2,spacing:5});
    count++;if(count>=limit)break;
   }
  }
- const batches=new Map(),queue=(key,geometry,color,x,y,z,scaleX,scaleY,scaleZ,yaw=0)=>{
+ const batches=new Map(),queue=(key,geometry,color,x,y,z,scaleX,scaleY,scaleZ,yaw=0,tiltX=0,tiltZ=0)=>{
   if(!batches.has(key))batches.set(key,{geometry,color,items:[]});
-  batches.get(key).items.push({x,y,z,scaleX,scaleY,scaleZ,yaw});
+  batches.get(key).items.push({x,y,z,scaleX,scaleY,scaleZ,yaw,tiltX,tiltZ});
  };
  // Unit boxes/cylinders are shared inside each material batch.
  const box=new THREE.BoxGeometry(1,1,1),cylinder=new THREE.CylinderGeometry(.5,.5,1,6);
@@ -255,12 +261,25 @@ function addLandscapeDetails(group,entry,field,overlay,reserved,benchTemplate=nu
    queue('planter',box,0x9b7657,p.x,y+.16,p.z,2.4,.32,.9,p.yaw);
    queue('gardenflowers',box,0xe3a477,p.x,y+.43,p.z,2.1,.35,.65,p.yaw);
    queue('gardenflowers2',box,0xe9d68d,p.x+.25*Math.sin(p.yaw),y+.48,p.z+.25*Math.cos(p.yaw),1.8,.25,.18,p.yaw);
-  }else{
-   queue('playposts',box,0xb47757,p.x-.9*Math.cos(p.yaw),y+.95,p.z+.9*Math.sin(p.yaw),.15,1.9,.15,p.yaw);
-   queue('playposts',box,0xb47757,p.x+.9*Math.cos(p.yaw),y+.95,p.z-.9*Math.sin(p.yaw),.15,1.9,.15,p.yaw);
-   queue('playbeam',box,0xb47757,p.x,y+1.88,p.z,1.95,.15,.15,p.yaw);
-   queue('playseat',box,0xe2b96b,p.x,y+.55,p.z,1.0,.12,.35,p.yaw);
-   queue('playside',box,0xc78463,p.x,y+1.12,p.z,.12,1.5,.12,p.yaw);
+  }else if(p.kind==='swing'){
+   // A-frame, beam, hanging chains and two seats; pooled per material.
+   const at=(x,z)=>[p.x+x*Math.cos(p.yaw)+z*Math.sin(p.yaw),p.z-x*Math.sin(p.yaw)+z*Math.cos(p.yaw)];
+   for(const x of [-1.35,1.35])for(const z of [-.48,.48]){
+    const q=at(x,z);queue('swingframe',cylinder,0xb8614d,q[0],y+1.12,q[1],.12,2.45,.12,p.yaw,z>0?.42:-.42);
+   }
+   queue('swingbeam',box,0xd5a952,p.x,y+2.24,p.z,3.1,.15,.15,p.yaw);
+   for(const x of [-.65,.65]){
+    const seat=at(x,0);queue('swingseat',box,0x40647a,seat[0],y+.53,seat[1],.48,.09,.33,p.yaw);
+    for(const dx of [-.18,.18]){const q=at(x+dx,0);queue('swingchain',cylinder,0x82817a,q[0],y+1.36,q[1],.045,1.7,.045,p.yaw);}
+   }
+  }else if(p.kind==='slide'){
+   const at=(x,z)=>[p.x+x*Math.cos(p.yaw)+z*Math.sin(p.yaw),p.z-x*Math.sin(p.yaw)+z*Math.cos(p.yaw)];
+   for(const z of [-.4,.4]){const q=at(-.95,z);queue('slideposts',cylinder,0x557b94,q[0],y+.85,q[1],.12,1.7,.12,p.yaw);}
+   const deck=at(-.75,0);queue('slidedeck',box,0xd3a85b,deck[0],y+1.35,deck[1],.9,.12,.85,p.yaw);
+   const slope=at(.28,0);queue('slidechute',box,0xbac8c7,slope[0],y+.73,slope[1],2.55,.12,.8,p.yaw,0,-.48);
+   for(const z of [-.44,.44]){const q=at(.28,z);queue('sliderail',box,0xe7b557,q[0],y+.84,q[1],2.55,.16,.08,p.yaw,0,-.48);}
+   for(const h of [.25,.55,.85,1.15]){const q=at(-1.35,0);queue('slidesteps',box,0xb57856,q[0],y+h,q[1],.12,.07,.75,p.yaw);}
+
   }
  }
  // Short painted footpaths stay inside mapped park polygons and avoid
@@ -287,7 +306,7 @@ function addLandscapeDetails(group,entry,field,overlay,reserved,benchTemplate=nu
   const mesh=new THREE.InstancedMesh(b.geometry.clone(),new THREE.MeshLambertMaterial({color:b.color}),b.items.length);
   mesh.name='estimated-'+key;mesh.frustumCulled=false;mesh.raycast=()=>{};
   const object=new THREE.Object3D();
-  b.items.forEach((p,i)=>{object.position.set(p.x,p.y,p.z);object.scale.set(p.scaleX,p.scaleY,p.scaleZ);object.rotation.set(0,p.yaw,0);object.updateMatrix();mesh.setMatrixAt(i,object.matrix);});
+  b.items.forEach((p,i)=>{object.position.set(p.x,p.y,p.z);object.scale.set(p.scaleX,p.scaleY,p.scaleZ);object.rotation.set(p.tiltX||0,p.yaw,p.tiltZ||0,'YXZ');object.updateMatrix();mesh.setMatrixAt(i,object.matrix);});
   mesh.instanceMatrix.needsUpdate=true;details.add(mesh);
  }
  if(pathVertices.length){const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(pathVertices,3));const normals=new Float32Array(pathVertices.length);for(let i=1;i<normals.length;i+=3)normals[i]=1;geometry.setAttribute('normal',new THREE.BufferAttribute(normals,3));const path=new THREE.Mesh(geometry,new THREE.MeshLambertMaterial({color:0xc9b893,side:THREE.DoubleSide}));path.name='estimated-parkpath';path.raycast=()=>{};details.add(path);}
