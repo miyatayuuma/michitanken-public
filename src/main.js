@@ -294,6 +294,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
        visual.layers.roads=next.roads;visual.layers.buildings=next.buildings;
        visual.root.add(next.roads,next.buildings);
        visual.level=target;
+       if(visual.nature?.userData.landscapeDetails)visual.nature.userData.landscapeDetails.visible=target==='full';
        next.roads.visible=layerVisibility.roads;
        next.buildings.visible=layerVisibility.buildings;
        syncRoadDepth(visual.layers);
@@ -320,15 +321,31 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    status.classList.toggle('failed',!!snapshot.errors.length);
    status.hidden=container.dataset.appReady!=='false'&&!snapshot.errors.length;
  }
+ // Keep scenery away from authored NPC groups, warp landings, map points and
+ // collectible positions; locations are supplied by the private world pack.
+ const sceneryReserved=Promise.all(['npcs.json','warps.json','pois.json'].map(async name=>{
+  try{const r=await fetch(import.meta.env.BASE_URL+'data/'+name);return r.ok?await r.json():null;}catch{return null;}
+ })).then(([npcs,warps,pois])=>[
+  ...(npcs?.groups||[]).map(g=>({x:g.spawnAnchor?.[0],z:g.spawnAnchor?.[1],radius:10})),
+  ...(warps?.points||[]).filter(p=>p.landing?.confirmed).map(p=>({x:p.landing.position?.[0],z:p.landing.position?.[2],radius:8})),
+  ...(pois?.points||[]).map(p=>({x:p.position?.[0],z:p.position?.[2],radius:6}))
+ ].filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.z)));
  async function mountVegetation(visual){
    if(!natureEnabled)return;
    try{
      const overlay=await vegetationOverlay(visual.entry);
      if(visual.removed||!overlay)return;
      wildlife?.register(visual.entry,visual.field,overlay);
-     const group=await natureRenderer.build(visual.entry,visual.field,overlay,{maxTotal:natureInstanceBudget({coarsePointer,memoryGiB}),individualColors:natureColorsEnabled});
+     const authored=await sceneryReserved;
+     let collectibles=[];
+     try{const r=await fetch(import.meta.env.BASE_URL+'data/exploration/'+visual.entry.id+'.json');if(r.ok)collectibles=(await r.json()).objects||[];}catch{}
+     const reserved=[...authored,...collectibles.map(p=>({x:p.x,z:p.z,radius:5}))]
+       .filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.z))
+       .map(p=>({...p,x:p.x-visual.entry.offset[0],z:p.z-visual.entry.offset[1]}));
+     const group=await natureRenderer.build(visual.entry,visual.field,overlay,{maxTotal:natureInstanceBudget({coarsePointer,memoryGiB}),individualColors:natureColorsEnabled,reserved});
      if(visual.removed){disposeObject(group);return;}
-     if(!group.userData.vegetationCount)return;
+     if(!group.userData.vegetationCount&&!group.userData.estimatedStreetFurniture&&!group.userData.estimatedParkFurniture&&!group.userData.estimatedParkPaths){disposeObject(group);return;}
+     if(group.userData.landscapeDetails)group.userData.landscapeDetails.visible=visual.level==='full';
      visual.nature=group;visual.root.add(group);updateLayerMetrics();
    }catch(error){
      if(!visual.removed)console.warn('Optional mapped vegetation unavailable:',visual.entry.id,error);
@@ -898,6 +915,7 @@ async function main(){
  }
 }
 main();
+
 
 
 
