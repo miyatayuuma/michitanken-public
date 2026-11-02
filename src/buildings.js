@@ -135,6 +135,7 @@ export function addBuildings(field,parent,layerSet,detail='full',entry={offset:[
     const t=(col+.5)/columns,half=Math.min(.65/len,.28/columns),y=base+1.15+floor*2.8;
     if(y+1.05>=top-profile.rise-.12)continue;
     const k=details.length;face(details,at(t-half,y),at(t+half,y),at(t-half,y+1.05),at(t+half,y+1.05));appendColor(detailColors,(details.length-k)/3,win);
+    if(profile.group==='house'&&profile.seed%2===0){const kframe=details.length;face(details,at(t-half-.08/len,y-.09,.045),at(t+half+.08/len,y-.09,.045),at(t-half-.08/len,y,.045),at(t+half+.08/len,y,.045));appendColor(detailColors,(details.length-kframe)/3,'#e0d9c8');}
    }
    const originalEdge=i;
    if(originalEdge===entranceEdge&&len>=3.5){
@@ -144,12 +145,17 @@ export function addBuildings(field,parent,layerSet,detail='full',entry={offset:[
      const k2=details.length,h=y+2.12,wide=half+.22/len;
      face(details,at(t-wide,h,.03),at(t+wide,h,.03),at(t-wide,h,.48),at(t+wide,h,.48));appendColor(detailColors,(details.length-k2)/3,'#686961');
     }
+    if(profile.group==='house'&&len>=4){
+     // Low entrance step and sheltered threshold follow the local ground.
+     const kstep=details.length,lo=at(t-half-.06/len,y+.06,.04),hi=at(t+half+.06/len,y+.06,.04);
+     face(details,lo,hi,at(t-half-.06/len,y+.06,.78),at(t+half+.06/len,y+.06,.78));appendColor(detailColors,(details.length-kstep)/3,'#c1b5a0');
+    }
     if(profile.group==='house'&&profile.seed%3===0&&len>=6){
      const k3=details.length,low=base+.08,high=base+.68;
      for(const [l,r] of [[.04,.32],[.68,.96]])face(details,at(l,low,.5),at(r,low,.5),at(l,high,.5),at(r,high,.5));
      appendColor(detailColors,(details.length-k3)/3,'#ada99c');
     }
-    if(profile.group==='house'&&profile.seed%7===0&&len>=7){
+    if(profile.group==='house'&&profile.seed%4===0&&len>=7){
      const q=(t,out)=>[a[0]+dx*t+nx*out,a[1]+dz*t+nz*out];
      const pad=[q(.12,.8),q(.42,.8),q(.12,4.3),q(.42,4.3)];
      if(parkingPad(field,pad)){

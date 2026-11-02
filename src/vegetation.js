@@ -4,12 +4,13 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {terrainMeshHeight} from '../lib/geo.mjs';
 import {buildRoadRibbon,roadSurfaceOptions} from '../lib/road-surface.mjs';
 import {addContactShadows} from './contact-shadow.js';
+import {addParkGround} from './park-ground.js';
 import {surfaceContainsWater} from '../lib/surface-mesh.mjs';
 
 // Kenney Nature Kit 2.1, CC0. Models are hosted by the PRIVATE game site.
 const SPEC={
  tree:{models:['tree_oak','tree_default','tree_pineDefaultA'],height:[5,9],limit:100},
- bush:{models:['plant_bush'],height:[.6,1.8],limit:180},
+ bush:{models:['plant_bush','plant_bush_detailed','plant_bush_triangle'],height:[.6,1.8],limit:180},
  grass:{models:['grass'],height:[.35,1.15],limit:310},
  flower:{models:['flower_yellowA'],height:[.35,.8],limit:65},
  rock:{models:['rock_smallA'],height:[.45,1],limit:22}
@@ -304,7 +305,7 @@ function addLandscapeDetails(group,entry,field,overlay,reserved,benchTemplate=nu
  const details=new THREE.Group();details.name='estimated-landscape-details';
  for(const [key,b] of batches){
   const mesh=new THREE.InstancedMesh(b.geometry.clone(),new THREE.MeshLambertMaterial({color:b.color}),b.items.length);
-  mesh.name='estimated-'+key;mesh.frustumCulled=false;mesh.raycast=()=>{};
+  mesh.renderOrder=3;mesh.name='estimated-'+key;mesh.frustumCulled=false;mesh.raycast=()=>{};
   const object=new THREE.Object3D();
   b.items.forEach((p,i)=>{object.position.set(p.x,p.y,p.z);object.scale.set(p.scaleX,p.scaleY,p.scaleZ);object.rotation.set(p.tiltX||0,p.yaw,p.tiltZ||0,'YXZ');object.updateMatrix();mesh.setMatrixAt(i,object.matrix);});
   mesh.instanceMatrix.needsUpdate=true;details.add(mesh);
@@ -313,7 +314,7 @@ function addLandscapeDetails(group,entry,field,overlay,reserved,benchTemplate=nu
  if(benchTemplate){
   const items=parks.filter(p=>p.kind==='bench'),unit=benchTemplate.box.max.y-benchTemplate.box.min.y;
   for(const source of benchTemplate.meshes){if(!items.length)break;const mesh=new THREE.InstancedMesh(source.geometry.clone(),Array.isArray(source.material)?source.material.map(m=>m.clone()):source.material.clone(),items.length),obj=new THREE.Object3D(),matrix=new THREE.Matrix4();
-   items.forEach((p,i)=>{const scale=.9/unit;obj.position.set(p.x,ground(p.x,p.z)-benchTemplate.box.min.y*scale,p.z);obj.rotation.set(0,p.yaw,0);obj.scale.setScalar(scale);obj.updateMatrix();matrix.multiplyMatrices(obj.matrix,source.matrixWorld);mesh.setMatrixAt(i,matrix);});mesh.instanceMatrix.needsUpdate=true;mesh.frustumCulled=false;mesh.name='park-model-bench';mesh.raycast=()=>{};details.add(mesh);
+   items.forEach((p,i)=>{const scale=.9/unit;obj.position.set(p.x,ground(p.x,p.z)-benchTemplate.box.min.y*scale,p.z);obj.rotation.set(0,p.yaw,0);obj.scale.setScalar(scale);obj.updateMatrix();matrix.multiplyMatrices(obj.matrix,source.matrixWorld);mesh.setMatrixAt(i,matrix);});mesh.instanceMatrix.needsUpdate=true;mesh.frustumCulled=false;mesh.renderOrder=3;mesh.name='park-model-bench';mesh.raycast=()=>{};details.add(mesh);
   }
  }
  group.add(details);group.userData.landscapeDetails=details;
@@ -349,13 +350,13 @@ export function createVegetationRenderer({baseURL,loader=new GLTFLoader()}){
   }
   try{
    for(const [name,items] of groups){
-    const {box,meshes}=await getModel(name).catch(()=>getModel(name.startsWith('new-tree')?'tree_default':name));
+    const {box,meshes}=await getModel(name).catch(()=>getModel(name.startsWith('new-tree')?'tree_default':name.startsWith('plant_bush_')?'plant_bush':name));
     const unit=box.max.y-box.min.y;
     for(const source of meshes){
      const geometry=source.geometry.clone();
      const material=Array.isArray(source.material)?source.material.map(m=>m.clone()):source.material.clone();
      const batch=new THREE.InstancedMesh(geometry,material,items.length);
-     batch.name='nature-'+name;
+     batch.name='nature-'+name;batch.renderOrder=3;
      batch.frustumCulled=false; // Parent tile group performs AABB culling.
      const object=new THREE.Object3D(),matrix=new THREE.Matrix4();
      const tintable=options.individualColors!==false&&!(Array.isArray(material)?material:[material]).some(m=>m.map);
@@ -375,6 +376,7 @@ export function createVegetationRenderer({baseURL,loader=new GLTFLoader()}){
     }
    }
    addContactShadows(field,group,placement.filter(p=>p.kind==='tree').map(p=>({x:p.x-.65,z:p.z-.4,width:p.height*.85,depth:p.height*.7})));
+   addParkGround(field,overlay,group);
    const benchTemplate=await getModel('new-bench').catch(()=>null);
    addLandscapeDetails(group,entry,field,overlay,[...(options.reserved||[]),...placement.filter(p=>p.kind==='tree'||p.kind==='bush').map(p=>({x:p.x,z:p.z,radius:p.kind==='tree'?2.8:1.2}))],benchTemplate);
    group.userData.vegetationCount=placement.length;

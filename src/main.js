@@ -9,6 +9,7 @@ import {createMichiSound} from './sound.js';
 import {createBiomeDebug} from './biome-debug.js';
 import {loadPoiRegistry,createPoiMarkers} from './poi-markers.js';
 import {addBuildings} from './buildings.js';
+import {buildingShadows} from './contact-shadow.js';
 import * as THREE from 'three';
 import {terrainMeshHeight} from '../lib/geo.mjs';
 import {buildRoadRibbon,roadSurfaceOptions} from '../lib/road-surface.mjs';
@@ -41,7 +42,7 @@ const notebook=setupNotebook();document.querySelector('#retry').onclick=()=>loca
 let renderer,controls,scene,camera,frame=0;
 const localY=(field,x,z)=>terrainMeshHeight(field.terrain,x,z)-field.terrain.min;
 function geometryFromTriangles(triangles){
- const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(triangles,3));g.computeVertexNormals();return g;
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(triangles,3));const n=new Float32Array(triangles.length);for(let i=1;i<n.length;i+=3)n[i]=1;g.setAttribute('normal',new THREE.BufferAttribute(n,3));return g;
 }
 function addTerrain(field,parent){
  if(field.surface?.terrain){
@@ -108,13 +109,14 @@ function addRoads(field,parent,layerSet,detail='full'){
   if(road.tunnel)continue;
   const kind=road.bridge?'bridge':['footway','path','steps','pedestrian','cycleway'].includes(road.kind)?'path':'road';
   for(let i=1;i<road.points.length;i++)batches[kind].push(...buildRoadRibbon(road.points[i-1],road.points[i],road.width,field,road.bridge ? .40 : .23,{...roadSurfaceOptions(detail),heightAt:road.bridge?(x,z)=>roadSurfaceHeight(field,road,x,z):null}));
+  if(kind==='road')for(const p of road.points){const r=Math.min((road.width||4)*.34,4);if(r<.3)continue;batches.road.push(...buildRoadRibbon([p[0]-r,p[1]],[p[0]+r,p[1]],r*2,field,.23,roadSurfaceOptions(detail)));}
  }
  for(const railway of field.osm.railways||[])if(!railway.tunnel)for(let i=1;i<railway.points.length;i++)
   batches.railway.push(...buildRoadRibbon(railway.points[i-1],railway.points[i],railway.width||2.5,field,railway.bridge?2.8:.31,roadSurfaceOptions(detail)));
  for(const [type,verts] of Object.entries(batches)){
   if(!verts.length)continue;
   const colors={road:0xded8c5,path:0xedbb7a,railway:0x5e6b6e,bridge:0xeab878};
-  const roadMesh=new THREE.Mesh(geometryFromTriangles(verts),new THREE.MeshLambertMaterial({color:colors[type],side:THREE.DoubleSide,depthTest:true,depthWrite:true}));
+  const roadMesh=new THREE.Mesh(geometryFromTriangles(verts),new THREE.MeshLambertMaterial({color:colors[type],side:THREE.DoubleSide,depthTest:true,depthWrite:true,polygonOffset:type==='path',polygonOffsetFactor:-1,polygonOffsetUnits:-2}));
   roadMesh.renderOrder=2;group.add(roadMesh);
  }
  parent.add(group);layerSet.roads=group;
@@ -344,7 +346,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
        .map(p=>({...p,x:p.x-visual.entry.offset[0],z:p.z-visual.entry.offset[1]}));
      const group=await natureRenderer.build(visual.entry,visual.field,overlay,{maxTotal:natureInstanceBudget({coarsePointer,memoryGiB}),individualColors:natureColorsEnabled,reserved});
      if(visual.removed){disposeObject(group);return;}
-     if(!group.userData.vegetationCount&&!group.userData.estimatedStreetFurniture&&!group.userData.estimatedParkFurniture&&!group.userData.estimatedParkPaths){disposeObject(group);return;}
+     if(!group.userData.vegetationCount&&!group.userData.estimatedStreetFurniture&&!group.userData.estimatedParkFurniture&&!group.userData.estimatedParkPaths&&!group.getObjectByName('mapped-park-ground')){disposeObject(group);return;}
      if(group.userData.landscapeDetails)group.userData.landscapeDetails.visible=visual.level==='full';
      visual.nature=group;visual.root.add(group);updateLayerMetrics();
    }catch(error){
@@ -361,6 +363,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    addRoads(field,root,layers,level);
    await nextFrame();
    addBuildings(field,root,layers,level,entry,colorsEnabled,buildingLighting);
+   buildingShadows(field,root);
    await nextFrame();
    addCrossingMarkers(field,root,layers);
    layers.outline=addTileBorder(field,root,entry);
