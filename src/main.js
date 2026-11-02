@@ -542,17 +542,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  const onNpcEnter=e=>{if(e.key==='Enter'&&npc?.talking&&!e.repeat&&!e.target?.matches?.('button,input,textarea,select')){e.preventDefault();npc.advance();}};window.addEventListener('keydown',onNpcEnter);
  let footCache=null;
  const avatarPosition=()=>{
-   let y=playerState.y;
-   if(playerSprite){
-     const owner=tileAtPosition(manifest,playerState.x,playerState.z),tile=owner&&world.tileWorlds.get(owner.id);
-     if(tile){
-       if(!footCache||footCache.field!==tile.field||footCache.x!==playerState.x||footCache.z!==playerState.z)
-         footCache={field:tile.field,x:playerState.x,z:playerState.z,
-           y:renderedFootHeight(tile.field,playerState.x-owner.offset[0],playerState.z-owner.offset[1],world.baseElevation)};
-       y=footCache.y;
-     }
-   }
-   avatar.position.set(playerState.x,y,playerState.z);
+   avatar.position.set(playerState.x,playerState.y,playerState.z);
    if(!playerSprite)avatar.rotation.y=playerState.facing;
  };
  function followCamera(dt,snap=false){
@@ -638,7 +628,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
       await Promise.all(requiredLandingTiles(manifest,landing.position[0],landing.position[2]).map(id=>streamer.ensure(id)));
       const result=validateLanding(world,landing);
       if(!result.ok)throw Error(result.reason);
-      playerState={...playerState,x:result.x,y:result.y,z:result.z,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};
+      playerState={...playerState,x:result.x,y:result.y,z:result.z,bridgeId:null,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};
       cameraYaw=result.yaw;playerSprite?.reset();footCache=null;avatarPosition();changeModeAfterWarp();followCamera(0,true);updateHud();
     }catch(error){map2d?.failure();console.warn('Home warp unavailable:',error);}
     finally{container.classList.remove('warp-transition');homeBusy=false;map2d?.setBusy(false);}
@@ -685,7 +675,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
   load:async id=>{const l=warpRegistry.get(id).landing;await Promise.all(requiredLandingTiles(manifest,l.position[0],l.position[2]).map(id=>streamer.ensure(id)));},
   validate:id=>validateLanding(world,warpRegistry.get(id).landing),
   capture:()=>({player:{...playerState},yaw:cameraYaw,pitch:cameraPitch,distance:cameraDistance,camera:camera.position.clone(),rotation:camera.quaternion.clone(),target:controls.target.clone()}),
-  commit:result=>{playerState={...playerState,x:result.x,y:result.y,z:result.z,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};cameraYaw=result.yaw;playerSprite?.reset();footCache=null;avatarPosition();changeModeAfterWarp();followCamera(0,true);landmarkFX.arrive([result.x,result.y+world.baseElevation,result.z]);updateHud();},
+  commit:result=>{playerState={...playerState,x:result.x,y:result.y,z:result.z,bridgeId:null,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};cameraYaw=result.yaw;playerSprite?.reset();footCache=null;avatarPosition();changeModeAfterWarp();followCamera(0,true);landmarkFX.arrive([result.x,result.y+world.baseElevation,result.z]);updateHud();},
   restore:s=>{playerState=s.player;cameraYaw=s.yaw;cameraPitch=s.pitch;cameraDistance=s.distance;camera.position.copy(s.camera);camera.quaternion.copy(s.rotation);controls.target.copy(s.target);avatarPosition();updateHud();},
   transition:async signal=>{container.classList.add('warp-transition');if(!matchMedia('(prefers-reduced-motion: reduce)').matches)await new Promise(resolve=>setTimeout(resolve,140));if(signal.aborted)throw Error('cancelled');},
   onBusy:value=>{gameInput.reset();accumulator=0;map2d?.setBusy(value);for(const b of characterButton.children)b.disabled=value;if(!value){const arriving=container.classList.contains('warp-transition')&&mode==='walk';container.classList.remove('warp-transition');if(arriving){container.classList.add('warp-arrival');setTimeout(()=>container.classList.remove('warp-arrival'),150);}}}
