@@ -31,7 +31,7 @@ import {createNpcSystem} from './npc.js';
 import {KIKI_JIJI_DIALOGUES} from '../lib/npc.mjs';
 import {BOOK_GROUP_BY_ID} from '../lib/book-characters.mjs';
 import {validateNpcCatalog,resolveNpcPlacements} from '../lib/npc-catalog.mjs';
-import {renderedFootHeight} from '../lib/avatar-ground.mjs';
+import {renderedFootHeight,roadSurfaceHeight} from '../lib/avatar-ground.mjs';
 import {homeStorageKey,nearbyBuildings,validHomeRecord} from '../lib/home.mjs';
 import {buildHomeInterior} from './home-interior.js';
 import './style.css';
@@ -105,8 +105,9 @@ function addTileBorder(field,parent,entry){
 function addRoads(field,parent,layerSet,detail='full'){
  const group=new THREE.Group();group.name='roads';const batches={road:[],path:[],railway:[],bridge:[]};
  for(const road of field.osm.roads){
+  if(road.tunnel)continue;
   const kind=road.bridge?'bridge':['footway','path','steps','pedestrian','cycleway'].includes(road.kind)?'path':'road';
-  for(let i=1;i<road.points.length;i++)batches[kind].push(...buildRoadRibbon(road.points[i-1],road.points[i],road.width,field,road.bridge ? .40 : .23,roadSurfaceOptions(detail)));
+  for(let i=1;i<road.points.length;i++)batches[kind].push(...buildRoadRibbon(road.points[i-1],road.points[i],road.width,field,road.bridge ? .40 : .23,{...roadSurfaceOptions(detail),heightAt:road.bridge?(x,z)=>roadSurfaceHeight(field,road,x,z):null}));
  }
  for(const railway of field.osm.railways||[])if(!railway.tunnel)for(let i=1;i<railway.points.length;i++)
   batches.railway.push(...buildRoadRibbon(railway.points[i-1],railway.points[i],railway.width||2.5,field,railway.bridge?2.8:.31,roadSurfaceOptions(detail)));
@@ -907,6 +908,7 @@ async function main(){
  }
 }
 main();
+
 
 
 
