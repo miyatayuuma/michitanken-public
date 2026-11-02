@@ -90,10 +90,10 @@ export function createWaterLayer(field,{flat=false,sharedProfiles=null,detail='f
  const prepared=field.surface?.water;
  const uniforms={uTime:{value:0},uMotion:{value:1},uDomainFlow:{value:prepared?1:0}};
  const sharedMaterial=flat
-  ?new THREE.MeshLambertMaterial({color:RIVER_BASE_COLOR,side:THREE.DoubleSide,depthTest:!!prepared,depthWrite:!!prepared})
+  ?new THREE.MeshLambertMaterial({color:RIVER_BASE_COLOR,side:THREE.DoubleSide,depthTest:!!prepared,depthWrite:true})
   :new THREE.ShaderMaterial({
     uniforms,vertexShader:riverVertexShader,fragmentShader:riverFragmentShader,
-    depthTest:!!prepared,depthWrite:!!prepared,side:THREE.DoubleSide,transparent:false
+    depthTest:!!prepared,depthWrite:true,side:THREE.DoubleSide,transparent:false
   });
  const areas=field.osm.waterAreas||[];
  const summary={areas:0,ribbons:0,triangles:0,flowPaths:paths.length,limited:false,mode:flat?'flat':'procedural',detail,textureFree:SHADER_TEXTURE_FREE,source:prepared?'prepared-domain':'legacy-overlay'};
