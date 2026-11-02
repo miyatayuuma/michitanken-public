@@ -15,7 +15,7 @@ export function addBuildings(field,parent,layerSet,detail='full',entry={offset:[
  for(const b of field.osm.buildings){
   const p=b.footprint;if(p.length<3)continue;
   const color=buildingColors(b,entry,colorsEnabled),wallStart=walls.length,roofStart=roofs.length;
-  const base=p.reduce((sum,[x,z])=>sum+localY(field,x,z),0)/p.length,bottom=base+.15,top=base+b.height;
+  const heights=p.map(([x,z])=>localY(field,x,z)),base=heights.reduce((a,b)=>a+b,0)/p.length,bottom=Math.min(...heights)-.1,top=base+b.height;
   const shape=new THREE.Shape();shape.moveTo(p[0][0],-p[0][1]);for(let i=1;i<p.length;i++)shape.lineTo(p[i][0],-p[i][1]);shape.closePath();
   const roof=new THREE.ShapeGeometry(shape);roof.rotateX(-Math.PI/2);roof.translate(0,top,0);
   const nongrid=roof.index?roof.toNonIndexed():roof;
