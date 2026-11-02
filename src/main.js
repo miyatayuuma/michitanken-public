@@ -10,7 +10,7 @@ import {createBiomeDebug} from './biome-debug.js';
 import {loadPoiRegistry,createPoiMarkers} from './poi-markers.js';
 import {addBuildings} from './buildings.js';
 import * as THREE from 'three';
-import {gridSample} from '../lib/geo.mjs';
+import {terrainMeshHeight} from '../lib/geo.mjs';
 import {buildRoadRibbon,roadSurfaceOptions} from '../lib/road-surface.mjs';
 import {loadWaterProfiles,profilesForWaterField} from '../lib/water-profile-data.mjs';
 import {createSurfaceMeshLoader} from '../lib/surface-mesh.mjs';
@@ -31,7 +31,7 @@ import {createNpcSystem} from './npc.js';
 import {KIKI_JIJI_DIALOGUES} from '../lib/npc.mjs';
 import {BOOK_GROUP_BY_ID} from '../lib/book-characters.mjs';
 import {validateNpcCatalog,resolveNpcPlacements} from '../lib/npc-catalog.mjs';
-import {renderedFootHeight} from '../lib/avatar-ground.mjs';
+import {renderedFootHeight,roadSurfaceHeight} from '../lib/avatar-ground.mjs';
 import {homeStorageKey,nearbyBuildings,validHomeRecord} from '../lib/home.mjs';
 import {buildHomeInterior} from './home-interior.js';
 import './style.css';
@@ -39,7 +39,7 @@ import './home-style.css';
 const container=document.querySelector('#scene'),status=document.querySelector('#status'),details=document.createElement('aside');
 const notebook=setupNotebook();document.querySelector('#retry').onclick=()=>location.reload();
 let renderer,controls,scene,camera,frame=0;
-const localY=(field,x,z)=>gridSample(field.terrain,x,z)-field.terrain.min;
+const localY=(field,x,z)=>terrainMeshHeight(field.terrain,x,z)-field.terrain.min;
 function geometryFromTriangles(triangles){
  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(triangles,3));g.computeVertexNormals();return g;
 }
@@ -105,8 +105,9 @@ function addTileBorder(field,parent,entry){
 function addRoads(field,parent,layerSet,detail='full'){
  const group=new THREE.Group();group.name='roads';const batches={road:[],path:[],railway:[],bridge:[]};
  for(const road of field.osm.roads){
+  if(road.tunnel)continue;
   const kind=road.bridge?'bridge':['footway','path','steps','pedestrian','cycleway'].includes(road.kind)?'path':'road';
-  for(let i=1;i<road.points.length;i++)batches[kind].push(...buildRoadRibbon(road.points[i-1],road.points[i],road.width,field,road.bridge ? .40 : .23,roadSurfaceOptions(detail)));
+  for(let i=1;i<road.points.length;i++)batches[kind].push(...buildRoadRibbon(road.points[i-1],road.points[i],road.width,field,road.bridge ? .40 : .23,{...roadSurfaceOptions(detail),heightAt:road.bridge?(x,z)=>roadSurfaceHeight(field,road,x,z):null}));
  }
  for(const railway of field.osm.railways||[])if(!railway.tunnel)for(let i=1;i<railway.points.length;i++)
   batches.railway.push(...buildRoadRibbon(railway.points[i-1],railway.points[i],railway.width||2.5,field,railway.bridge?2.8:.31,roadSurfaceOptions(detail)));
@@ -293,6 +294,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
        visual.layers.roads=next.roads;visual.layers.buildings=next.buildings;
        visual.root.add(next.roads,next.buildings);
        visual.level=target;
+       if(visual.nature?.userData.landscapeDetails)visual.nature.userData.landscapeDetails.visible=target==='full';
        next.roads.visible=layerVisibility.roads;
        next.buildings.visible=layerVisibility.buildings;
        syncRoadDepth(visual.layers);
@@ -319,15 +321,31 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
    status.classList.toggle('failed',!!snapshot.errors.length);
    status.hidden=container.dataset.appReady!=='false'&&!snapshot.errors.length;
  }
+ // Keep scenery away from authored NPC groups, warp landings, map points and
+ // collectible positions; locations are supplied by the private world pack.
+ const sceneryReserved=Promise.all(['npcs.json','warps.json','pois.json'].map(async name=>{
+  try{const r=await fetch(import.meta.env.BASE_URL+'data/'+name);return r.ok?await r.json():null;}catch{return null;}
+ })).then(([npcs,warps,pois])=>[
+  ...(npcs?.groups||[]).map(g=>({x:g.spawnAnchor?.[0],z:g.spawnAnchor?.[1],radius:10})),
+  ...(warps?.points||[]).filter(p=>p.landing?.confirmed).map(p=>({x:p.landing.position?.[0],z:p.landing.position?.[2],radius:8})),
+  ...(pois?.points||[]).map(p=>({x:p.position?.[0],z:p.position?.[2],radius:6}))
+ ].filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.z)));
  async function mountVegetation(visual){
    if(!natureEnabled)return;
    try{
      const overlay=await vegetationOverlay(visual.entry);
      if(visual.removed||!overlay)return;
      wildlife?.register(visual.entry,visual.field,overlay);
-     const group=await natureRenderer.build(visual.entry,visual.field,overlay,{maxTotal:natureInstanceBudget({coarsePointer,memoryGiB}),individualColors:natureColorsEnabled});
+     const authored=await sceneryReserved;
+     let collectibles=[];
+     try{const r=await fetch(import.meta.env.BASE_URL+'data/exploration/'+visual.entry.id+'.json');if(r.ok)collectibles=(await r.json()).objects||[];}catch{}
+     const reserved=[...authored,...collectibles.map(p=>({x:p.x,z:p.z,radius:5}))]
+       .filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.z))
+       .map(p=>({...p,x:p.x-visual.entry.offset[0],z:p.z-visual.entry.offset[1]}));
+     const group=await natureRenderer.build(visual.entry,visual.field,overlay,{maxTotal:natureInstanceBudget({coarsePointer,memoryGiB}),individualColors:natureColorsEnabled,reserved});
      if(visual.removed){disposeObject(group);return;}
-     if(!group.userData.vegetationCount)return;
+     if(!group.userData.vegetationCount&&!group.userData.estimatedStreetFurniture&&!group.userData.estimatedParkFurniture&&!group.userData.estimatedParkPaths){disposeObject(group);return;}
+     if(group.userData.landscapeDetails)group.userData.landscapeDetails.visible=visual.level==='full';
      visual.nature=group;visual.root.add(group);updateLayerMetrics();
    }catch(error){
      if(!visual.removed)console.warn('Optional mapped vegetation unavailable:',visual.entry.id,error);
@@ -397,9 +415,21 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  const playerSprite=await loadPlayerSprite({baseURL:import.meta.env.BASE_URL});
  const avatar=playerSprite?.group||makeAvatar();avatar.traverse(o=>{if(o.isMesh)o.renderOrder=4;});scene.add(avatar);
  container.dataset.avatarKind=playerSprite?'sprite':'model';
-  const homeKey=homeStorageKey(globalThis.michiWorldPackId?.());
+  const worldSuffix=typeof manifest.worldId==='string'&&/^[a-z0-9-]+$/.test(manifest.worldId)?'.'+manifest.worldId:'';
+  const homeKey=homeStorageKey((globalThis.michiWorldPackId?.()||'demo')+worldSuffix);
   let homeRecord=null,homeInterior=null,homeBusy=false,homeSelection=0,exteriorCamera=null;
-  try{const saved=JSON.parse(localStorage.getItem(homeKey)||'null');if(validHomeRecord(saved))homeRecord=saved;}catch{}
+  try{
+   const saved=JSON.parse(localStorage.getItem(homeKey)||'null');
+   if(validHomeRecord(saved))homeRecord=saved;
+   else if(worldSuffix&&Array.isArray(manifest.legacyOffset)&&manifest.legacyOffset.length===2){
+    const previous=JSON.parse(localStorage.getItem(homeStorageKey(globalThis.michiWorldPackId?.()))||'null');
+    if(validHomeRecord(previous)){
+     const [dx,dz]=manifest.legacyOffset,[x,z]=previous.center,position=previous.landing.position;
+     const moved={...previous,center:[x+dx,z+dz],landing:{...previous.landing,position:[position[0]+dx,position[1],position[2]+dz]}};
+     if(tileAtPosition(manifest,moved.center[0],moved.center[1])&&tileAtPosition(manifest,moved.landing.position[0],moved.landing.position[2]))homeRecord=moved;
+    }
+   }
+  }catch{}
   try{const response=await fetch(import.meta.env.BASE_URL+'data/interiors/home.json',{cache:'no-store'});if(response.ok&&response.headers.get('content-type')?.includes('json'))homeInterior=buildHomeInterior(await response.json());}catch(error){console.warn('Optional home interior unavailable:',error);}
   const homePanel=document.createElement('section');homePanel.id='home-menu';
   const homeTitle=document.createElement('h2');homeTitle.textContent='おうち';
@@ -529,17 +559,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
  const onNpcEnter=e=>{if(e.key==='Enter'&&npc?.talking&&!e.repeat&&!e.target?.matches?.('button,input,textarea,select')){e.preventDefault();npc.advance();}};window.addEventListener('keydown',onNpcEnter);
  let footCache=null;
  const avatarPosition=()=>{
-   let y=playerState.y;
-   if(playerSprite){
-     const owner=tileAtPosition(manifest,playerState.x,playerState.z),tile=owner&&world.tileWorlds.get(owner.id);
-     if(tile){
-       if(!footCache||footCache.field!==tile.field||footCache.x!==playerState.x||footCache.z!==playerState.z)
-         footCache={field:tile.field,x:playerState.x,z:playerState.z,
-           y:renderedFootHeight(tile.field,playerState.x-owner.offset[0],playerState.z-owner.offset[1],world.baseElevation)};
-       y=footCache.y;
-     }
-   }
-   avatar.position.set(playerState.x,y,playerState.z);
+   avatar.position.set(playerState.x,playerState.y,playerState.z);
    if(!playerSprite)avatar.rotation.y=playerState.facing;
  };
  function followCamera(dt,snap=false){
@@ -625,7 +645,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
       await Promise.all(requiredLandingTiles(manifest,landing.position[0],landing.position[2]).map(id=>streamer.ensure(id)));
       const result=validateLanding(world,landing);
       if(!result.ok)throw Error(result.reason);
-      playerState={...playerState,x:result.x,y:result.y,z:result.z,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};
+      playerState={...playerState,x:result.x,y:result.y,z:result.z,bridgeId:null,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};
       cameraYaw=result.yaw;playerSprite?.reset();footCache=null;avatarPosition();changeModeAfterWarp();followCamera(0,true);updateHud();
     }catch(error){map2d?.failure();console.warn('Home warp unavailable:',error);}
     finally{container.classList.remove('warp-transition');homeBusy=false;map2d?.setBusy(false);}
@@ -672,7 +692,7 @@ async function init(north,manifest,roadSupplement=null,fixedWaterProfiles=null,s
   load:async id=>{const l=warpRegistry.get(id).landing;await Promise.all(requiredLandingTiles(manifest,l.position[0],l.position[2]).map(id=>streamer.ensure(id)));},
   validate:id=>validateLanding(world,warpRegistry.get(id).landing),
   capture:()=>({player:{...playerState},yaw:cameraYaw,pitch:cameraPitch,distance:cameraDistance,camera:camera.position.clone(),rotation:camera.quaternion.clone(),target:controls.target.clone()}),
-  commit:result=>{playerState={...playerState,x:result.x,y:result.y,z:result.z,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};cameraYaw=result.yaw;playerSprite?.reset();footCache=null;avatarPosition();changeModeAfterWarp();followCamera(0,true);landmarkFX.arrive([result.x,result.y+world.baseElevation,result.z]);updateHud();},
+  commit:result=>{playerState={...playerState,x:result.x,y:result.y,z:result.z,bridgeId:null,facing:result.yaw,moving:false,collided:false,collision:null,distance:0};cameraYaw=result.yaw;playerSprite?.reset();footCache=null;avatarPosition();changeModeAfterWarp();followCamera(0,true);landmarkFX.arrive([result.x,result.y+world.baseElevation,result.z]);updateHud();},
   restore:s=>{playerState=s.player;cameraYaw=s.yaw;cameraPitch=s.pitch;cameraDistance=s.distance;camera.position.copy(s.camera);camera.quaternion.copy(s.rotation);controls.target.copy(s.target);avatarPosition();updateHud();},
   transition:async signal=>{container.classList.add('warp-transition');if(!matchMedia('(prefers-reduced-motion: reduce)').matches)await new Promise(resolve=>setTimeout(resolve,140));if(signal.aborted)throw Error('cancelled');},
   onBusy:value=>{gameInput.reset();accumulator=0;map2d?.setBusy(value);for(const b of characterButton.children)b.disabled=value;if(!value){const arriving=container.classList.contains('warp-transition')&&mode==='walk';container.classList.remove('warp-transition');if(arriving){container.classList.add('warp-arrival');setTimeout(()=>container.classList.remove('warp-arrival'),150);}}}
@@ -895,5 +915,8 @@ async function main(){
  }
 }
 main();
+
+
+
 
 
