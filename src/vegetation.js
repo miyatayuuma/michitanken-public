@@ -189,7 +189,7 @@ export function sampleVegetation(entry,field,overlay,{maxTotal=540,reserved=[]}=
 
 // Lightweight instanced street furniture and park details. OSM polygons are
 // mapped; all object positions here are procedural scenery estimates.
-function addLandscapeDetails(group,entry,field,overlay,reserved,benchTemplate=null,fenceTemplate=null){
+function addLandscapeDetails(group,entry,field,overlay,reserved,models={}){
  const spots=[],parks=[];
  const safe=(x,z,r=1)=>{
   if(Math.abs(x)>field.size/2-3||Math.abs(z)>field.size/2-3||
@@ -227,9 +227,12 @@ function addLandscapeDetails(group,entry,field,overlay,reserved,benchTemplate=nu
   let count=0,limit=Math.min(5,Math.max(1,Math.floor(size/1200)));
   for(const p of options){
    if(!safe(p.x,p.z,2)||parks.some(q=>Math.hypot(p.x-q.x,p.z-q.z)<13))continue;
-   let kind=count===1&&size>2400?(hash(area.id+':play')<.5?'swing':'slide'):count>=2&&count%2===0&&size>1800?'garden':'bench';
+   let kind=count===1&&size>2400?(hash(area.id+':play')<.5?'swing':'slide'):
+    count===2&&size>2400?'seesaw':count>=3&&count%2===0&&size>1800?'garden':'bench';
+   // An older world ZIP may have no Sand3D additions: keep its park populated.
+   if(kind==='seesaw'&&!models.seesaw)kind='garden';
    // Space for the entire estimated play equipment, not just its centre.
-   if(kind==='swing'||kind==='slide'){
+   if(kind==='swing'||kind==='slide'||kind==='seesaw'){
     const clear=[[-2,-1.7],[-2,1.7],[2,-1.7],[2,1.7]].every(([dx,dz])=>inside(p.x+dx,p.z+dz,ring)&&!(area.holes||[]).some(h=>inside(p.x+dx,p.z+dz,h))&&safe(p.x+dx,p.z+dz,1));
     if(!clear)kind='bench';
    }
@@ -252,12 +255,12 @@ function addLandscapeDetails(group,entry,field,overlay,reserved,benchTemplate=nu
  }
  for(const p of parks){
   const y=ground(p.x,p.z);
-  if(p.kind==='bench'&&!benchTemplate){
+  if(p.kind==='bench'&&!models.bench){
    queue('bench',box,0x8c6548,p.x,y+.48,p.z,1.55,.15,.48,p.yaw);
    queue('benchback',box,0x8c6548,p.x,y+.90,p.z,1.55,.70,.12,p.yaw);
    queue('benchlegs',box,0x696762,p.x,y+.22,p.z,1.10,.44,.17,p.yaw);
-  }else if(p.kind==='bench'){
-   // Drawn as one instanced GLB batch below.
+  }else if(models[p.kind]){
+   // Sand3D or Kenney GLB: drawn as an instanced model below.
   }else if(p.kind==='garden'){
    queue('planter',box,0x9b7657,p.x,y+.16,p.z,2.4,.32,.9,p.yaw);
    queue('gardenflowers',box,0xe3a477,p.x,y+.43,p.z,2.1,.35,.65,p.yaw);
@@ -311,10 +314,22 @@ function addLandscapeDetails(group,entry,field,overlay,reserved,benchTemplate=nu
   mesh.instanceMatrix.needsUpdate=true;details.add(mesh);
  }
  if(pathVertices.length){const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(pathVertices,3));const normals=new Float32Array(pathVertices.length);for(let i=1;i<normals.length;i+=3)normals[i]=1;geometry.setAttribute('normal',new THREE.BufferAttribute(normals,3));const path=new THREE.Mesh(geometry,new THREE.MeshLambertMaterial({color:0xc9b893,side:THREE.DoubleSide}));path.name='estimated-parkpath';path.raycast=()=>{};details.add(path);}
- if(benchTemplate){
-  const items=parks.filter(p=>p.kind==='bench'),unit=benchTemplate.box.max.y-benchTemplate.box.min.y;
-  for(const source of benchTemplate.meshes){if(!items.length)break;const mesh=new THREE.InstancedMesh(source.geometry.clone(),Array.isArray(source.material)?source.material.map(m=>m.clone()):source.material.clone(),items.length),obj=new THREE.Object3D(),matrix=new THREE.Matrix4();
-   items.forEach((p,i)=>{const scale=.9/unit;obj.position.set(p.x,ground(p.x,p.z)-benchTemplate.box.min.y*scale,p.z);obj.rotation.set(0,p.yaw,0);obj.scale.setScalar(scale);obj.updateMatrix();matrix.multiplyMatrices(obj.matrix,source.matrixWorld);mesh.setMatrixAt(i,matrix);});mesh.instanceMatrix.needsUpdate=true;mesh.frustumCulled=false;mesh.renderOrder=3;mesh.name='park-model-bench';mesh.raycast=()=>{};details.add(mesh);
+ for(const [kind,template] of Object.entries(models)){
+  if(!template)continue;
+  const items=parks.filter(p=>p.kind===kind);if(!items.length)continue;
+  const unit=template.box.max.y-template.box.min.y;
+  const scale=({bench:.9,swing:2.3,slide:2.15,seesaw:1.4}[kind]||1)/unit;
+  for(const source of template.meshes){
+   const material=Array.isArray(source.material)?source.material.map(m=>m.clone()):source.material.clone();
+   const mesh=new THREE.InstancedMesh(source.geometry.clone(),material,items.length);
+   const obj=new THREE.Object3D(),matrix=new THREE.Matrix4();
+   items.forEach((p,i)=>{
+    obj.position.set(p.x,ground(p.x,p.z)-template.box.min.y*scale,p.z);
+    obj.rotation.set(0,p.yaw,0);obj.scale.setScalar(scale);obj.updateMatrix();
+    matrix.multiplyMatrices(obj.matrix,source.matrixWorld);mesh.setMatrixAt(i,matrix);
+   });
+   mesh.instanceMatrix.needsUpdate=true;mesh.frustumCulled=false;
+   mesh.renderOrder=3;mesh.name='park-model-'+kind;mesh.raycast=()=>{};details.add(mesh);
   }
  }
  group.add(details);group.userData.landscapeDetails=details;
@@ -377,8 +392,13 @@ export function createVegetationRenderer({baseURL,loader=new GLTFLoader()}){
    }
    addContactShadows(field,group,placement.filter(p=>p.kind==='tree').map(p=>({x:p.x-.65,z:p.z-.4,width:p.height*.85,depth:p.height*.7})));
    addParkGround(field,overlay,group);
-   const benchTemplate=await getModel('new-bench').catch(()=>null);
-   addLandscapeDetails(group,entry,field,overlay,[...(options.reserved||[]),...placement.filter(p=>p.kind==='tree'||p.kind==='bush').map(p=>({x:p.x,z:p.z,radius:p.kind==='tree'?2.8:1.2}))],benchTemplate);
+   const [bench,swing,slide,seesaw]=await Promise.all([
+    getModel('sand3d-bench').catch(()=>getModel('new-bench').catch(()=>null)),
+    getModel('sand3d-swing').catch(()=>null),
+    getModel('sand3d-slide').catch(()=>null),
+    getModel('sand3d-seesaw').catch(()=>null)
+   ]);
+   addLandscapeDetails(group,entry,field,overlay,[...(options.reserved||[]),...placement.filter(p=>p.kind==='tree'||p.kind==='bush').map(p=>({x:p.x,z:p.z,radius:p.kind==='tree'?2.8:1.2}))],{bench,swing,slide,seesaw});
    group.userData.vegetationCount=placement.length;
    return group;
   }catch(error){
